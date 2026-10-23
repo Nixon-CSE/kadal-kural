@@ -1,0 +1,157 @@
+"""Bilingual fuzzy/phonetic entity resolution and deterministic multi-trade parser."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
+from rapidfuzz import fuzz, process
+
+from kadal_kural.domain.models import BuyerProfile, HeldTradeContext, SKUProfile, TradeIntent
+from kadal_kural.domain.normalizer import (
+    BARGE_IN_OVERRIDE_MARKERS,
+    CANONICAL_UNIT_MAP,
+    TRAILING_LEDGER_VERBS,
+    normalize_hybrid_tamil_numerals,
+    split_multi_trade_clauses,
+    strip_tamil_dative_suffix,
+)
+
+
+class BilingualCatalogMatcher:
+    """Matches Tamil and Latin script buyer and SKU phrases against a domain catalog."""
+
+    def __init__(self, catalog_path: Union[str, Path]) -> None:
+        raw_data = json.loads(Path(catalog_path).read_text(encoding="utf-8"))
+        self.domain_id: str = raw_data["domain_id"]
+        self.domain_title: str = raw_data["domain_title"]
+
+        self.buyers: Dict[str, BuyerProfile] = {
+            item["buyer_id"]: BuyerProfile(**item) for item in raw_data["buyers"]
+        }
+        self.skus: Dict[str, SKUProfile] = {
+            item["sku_id"]: SKUProfile(**item) for item in raw_data["skus"]
+        }
+
+        self._buyer_alias_index: Dict[str, str] = {}
+        for buyer in self.buyers.values():
+            for alias in buyer.aliases:
+                self._buyer_alias_index[alias.lower().strip()] = buyer.buyer_id
+
+        self._sku_alias_index: Dict[str, str] = {}
+        for sku in self.skus.values():
+            for alias in sku.aliases:
+                self._sku_alias_index[alias.lower().strip()] = sku.sku_id
+
+    def resolve_buyer(self, raw_phrase: str) -> Tuple[Optional[BuyerProfile], float]:
+        """Resolves a buyer phrase (after dative suffix stripping) with confidence [0.0, 1.0]."""
+        cleaned = strip_tamil_dative_suffix(raw_phrase).lower().strip()
+        if not cleaned:
+            return None, 0.0
+        result = process.extractOne(
+            cleaned,
+            list(self._buyer_alias_index.keys()),
+            scorer=fuzz.WRatio,
+        )
+        if result is None:
+            return None, 0.0
+        matched_alias, score, _ = result
+        buyer = self.buyers[self._buyer_alias_index[matched_alias]]
+        return buyer, round(float(score) / 100.0, 3)
+
+    def resolve_sku(self, raw_phrase: str) -> Tuple[Optional[SKUProfile], float]:
+        """Resolves a commodity/SKU phrase with confidence [0.0, 1.0]."""
+        cleaned = raw_phrase.lower().strip()
+        if not cleaned:
+            return None, 0.0
+        result = process.extractOne(
+            cleaned,
+            list(self._sku_alias_index.keys()),
+            scorer=fuzz.WRatio,
+        )
+        if result is None:
+            return None, 0.0
+        matched_alias, score, _ = result
+        sku = self.skus[self._sku_alias_index[matched_alias]]
+        return sku, round(float(score) / 100.0, 3)
+
+    def parse_utterance(
+        self,
+        raw_utterance: str,
+        held_context: Optional[HeldTradeContext] = None,
+    ) -> List[TradeIntent]:
+        """
+        Extracts 1..N structured TradeIntent objects from a single spoken utterance.
+        Supports contextual barge-in quantity overrides (e.g., 'செந்திலுக்கு 25 பாக்ஸ் மட்டும் போடு').
+        """
+        normalized_full = normalize_hybrid_tamil_numerals(raw_utterance)
+        clauses = split_multi_trade_clauses(normalized_full)
+        intents: List[TradeIntent] = []
+
+        for clause in clauses:
+            tokens = clause.split()
+            numeric_positions = [(i, int(tok)) for i, tok in enumerate(tokens) if tok.isdigit()]
+            if not numeric_positions:
+                continue
+
+            is_override = any(tok.lower() in BARGE_IN_OVERRIDE_MARKERS for tok in tokens)
+            qty_token_idx, quantity = numeric_positions[0]
+            rate_inr: Optional[int] = (
+                numeric_positions[1][1]
+                if len(numeric_positions) >= 2
+                else (held_context.rate_inr if (held_context and is_override) else None)
+            )
+
+            unit = "box"
+            unit_end_idx = qty_token_idx
+            if qty_token_idx + 1 < len(tokens):
+                candidate_unit = tokens[qty_token_idx + 1].lower()
+                if candidate_unit in CANONICAL_UNIT_MAP:
+                    unit = CANONICAL_UNIT_MAP[candidate_unit]
+                    unit_end_idx = qty_token_idx + 1
+
+            buyer_phrase = " ".join(tokens[:qty_token_idx]).strip()
+            buyer, buyer_conf = self.resolve_buyer(buyer_phrase)
+            if buyer is None and held_context and is_override:
+                buyer = self.buyers.get(held_context.buyer_id)
+                buyer_conf = 0.92
+
+            sku_end_idx = numeric_positions[1][0] if len(numeric_positions) >= 2 else len(tokens)
+            sku_tokens = [
+                t
+                for t in tokens[unit_end_idx + 1 : sku_end_idx]
+                if t.lower() not in BARGE_IN_OVERRIDE_MARKERS
+                and t.lower() not in TRAILING_LEDGER_VERBS
+            ]
+            sku_phrase = " ".join(sku_tokens).strip()
+            sku, sku_conf = self.resolve_sku(sku_phrase)
+            if sku is None and held_context and is_override:
+                sku = self.skus.get(held_context.sku_id)
+                sku_conf = 0.92
+                if sku is not None:
+                    unit = sku.default_unit
+
+            total_val = (quantity or 0) * (rate_inr or 0)
+            rate_conf = 1.0 if rate_inr is not None and rate_inr > 0 else 0.0
+            overall_conf = round(min(buyer_conf, sku_conf, rate_conf), 3)
+
+            intents.append(
+                TradeIntent(
+                    raw_utterance=raw_utterance,
+                    normalized_clause=clause,
+                    buyer_id=buyer.buyer_id if buyer else None,
+                    buyer_name=buyer.canonical_name if buyer else (buyer_phrase or "Unknown Buyer"),
+                    buyer_confidence=buyer_conf,
+                    sku_id=sku.sku_id if sku else None,
+                    sku_name=sku.canonical_name if sku else (sku_phrase or "Unknown Item"),
+                    sku_confidence=sku_conf,
+                    quantity=quantity,
+                    unit=unit,
+                    rate_inr=rate_inr,
+                    total_value_inr=total_val,
+                    overall_confidence=overall_conf,
+                    is_barge_in_override=is_override,
+                )
+            )
+
+        return intents

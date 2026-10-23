@@ -1,0 +1,64 @@
+{
+  "domain_id": "kasimedu_harbour_b2b",
+  "domain_title": "Kasimedu Harbour & Mandi Wholesale Dispatch",
+  "buyers": [
+    {
+      "buyer_id": "BUY-101",
+      "canonical_name": "Senthil Sea Foods",
+      "tamil_speak_name": "செந்தில் சீஃபுட்ஸ்",
+      "credit_limit_inr": 150000,
+      "opening_balance_inr": 128000,
+      "phone_e164": "+919840011111",
+      "aliases": [
+        "Senthil Sea Foods",
+        "Senthil",
+        "செந்தில் சீஃபுட்ஸ்",
+        "செந்தில் சீஃபுட்",
+        "செந்தில்"
+      ]
+    },
+    {
+      "buyer_id": "BUY-102",
+      "canonical_name": "Kumaran Stores",
+      "tamil_speak_name": "குமரன் ஸ்டோர்ஸ்",
+      "credit_limit_inr": 80000,
+      "opening_balance_inr": 42000,
+      "phone_e164": "+919840022222",
+      "aliases": [
+        "Kumaran Stores",
+        "Kumaran",
+        "குமரன் ஸ்டோர்ஸ்",
+        "குமரன்"
+      ]
+    }
+  ],
+  "skus": [
+    {
+      "sku_id": "SKU-VAN-EXP",
+      "canonical_name": "Export Vanjaram",
+      "tamil_speak_name": "எக்ஸ்போர்ட் வஞ்சரம்",
+      "default_unit": "box",
+      "aliases": [
+        "Export Vanjaram",
+        "Vanjaram",
+        "எக்ஸ்போர்ட் வஞ்சரம்",
+        "வஞ்சரம்",
+        "வஞ்சிரம்"
+      ]
+    },
+    {
+      "sku_id": "SKU-PRW-TIG",
+      "canonical_name": "Tiger Prawn",
+      "tamil_speak_name": "டைகர் பிரான்",
+      "default_unit": "kg",
+      "aliases": [
+        "Tiger Prawn",
+        "Prawn",
+        "டைகர் ஃப்ராண்ட்",
+        "டைகர் பிரான்",
+        "டைகர் ப்ரான்",
+        "இறால்"
+      ]
+    }
+  ]
+}
