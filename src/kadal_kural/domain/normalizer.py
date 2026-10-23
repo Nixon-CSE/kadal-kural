@@ -8,8 +8,6 @@ from __future__ import annotations
 import re
 from typing import Dict, Final, FrozenSet, List
 
-# Additive hundreds & thousands prefixes produced by Gnani Prisma V2.5 ITN
-# e.g., 'எழுநூற்றி 40' -> 700 + 40 = 740; 'ஐநூற்றி 60' -> 500 + 60 = 560
 TAMIL_ADDITIVE_PREFIXES: Final[Dict[str, int]] = {
     "நூற்றி": 100,
     "நூற்று": 100,
@@ -75,8 +73,6 @@ def normalize_hybrid_tamil_numerals(utterance: str) -> str:
 
     while idx < total:
         token = tokens[idx]
-
-        # Pattern 1: Additive prefix + following digit or Tamil number word
         if token in TAMIL_ADDITIVE_PREFIXES and idx + 1 < total:
             base_val = TAMIL_ADDITIVE_PREFIXES[token]
             next_tok = tokens[idx + 1]
@@ -89,7 +85,6 @@ def normalize_hybrid_tamil_numerals(utterance: str) -> str:
                 idx += 2
                 continue
 
-        # Pattern 2: Tens/hundreds number word + unit word/digit (e.g. 'இருபத்தி 5' -> '25')
         if token in TAMIL_NUMBER_WORDS and idx + 1 < total:
             first_val = TAMIL_NUMBER_WORDS[token]
             next_tok = tokens[idx + 1]
@@ -99,7 +94,6 @@ def normalize_hybrid_tamil_numerals(utterance: str) -> str:
                 idx += 2
                 continue
 
-        # Pattern 3: Standalone number word
         if token in TAMIL_NUMBER_WORDS:
             resolved.append(str(TAMIL_NUMBER_WORDS[token]))
         else:
@@ -111,15 +105,16 @@ def normalize_hybrid_tamil_numerals(utterance: str) -> str:
 
 def strip_tamil_dative_suffix(phrase: str) -> str:
     """
-    Removes Tamil dative case suffixes (-க்கு, -னுக்கு, -உக்கு, -ku) attached to buyer names.
+    Removes Tamil dative case suffixes (-க்கு, -னுக்கு, -லுக்கு, -உக்கு, -ku) attached to buyer names.
+    Note: In Unicode, 'னுக்கு' is 6 codepoints (ன+ு+க+்+க+ு) and 'லுக்கு' is 6 codepoints (ல+ு+க+்+க+ு).
     """
     cleaned = phrase.strip()
-    if cleaned.endswith("னுக்கு") and len(cleaned) > 5:
-        return cleaned[:-5] + "ன்"
-    if cleaned.endswith("லுக்கு") and len(cleaned) > 5:
-        return cleaned[:-5] + "ல்"
+    if cleaned.endswith("னுக்கு") and len(cleaned) > len("னுக்கு"):
+        return cleaned[: -len("னுக்கு")] + "ன்"
+    if cleaned.endswith("லுக்கு") and len(cleaned) > len("லுக்கு"):
+        return cleaned[: -len("லுக்கு")] + "ல்"
     for suffix in ("க்கு", "உக்கு", "-ku", "ku"):
-        if cleaned.endswith(suffix) and len(cleaned) > len(suffix) + 2:
+        if cleaned.endswith(suffix) and len(cleaned) > len(suffix) + 1:
             return cleaned[: -len(suffix)].strip()
     return cleaned
 
