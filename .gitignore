@@ -10,6 +10,7 @@ env/
 
 # Environment variables & secrets (NEVER COMMIT API KEYS)
 .env
+.env.example
 
 # SQLite databases & WAL journals
 *.db
