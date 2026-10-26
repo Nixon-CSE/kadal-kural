@@ -104,3 +104,70 @@ def test_confidence_gate_blocks_unknown_buyer(tmp_path: Path) -> None:
     decisions = service.evaluate_utterance("புது கடைக்கு 30 பாக்ஸ் வஞ்சரம் போடு")
     assert len(decisions) == 1
     assert decisions[0].status == LedgerEventStatus.PENDING_CLARIFICATION
+
+import audioop
+import io
+import wave
+import pytest
+from kadal_kural.infrastructure.gnani_client import GnaniArthaSpeechClient
+
+
+@pytest.mark.asyncio
+async def test_live_gnani_timbre_to_prisma_roundtrip(tmp_path: Path) -> None:
+    """
+    LIVE E2E PRODUCTION NETWORK TEST (Zero Mocks):
+    1. Calls live wss://api.vachana.ai/api/v1/tts (Timbre v2.5) to synthesize a Tamil trade utterance.
+    2. Converts the returned WAV audio to 8,000 Hz 16-bit mono telephony PCM.
+    3. Streams exact 1,024-byte frames at 64ms intervals to wss://api.vachana.ai/stt/v3/stream (Prisma v2.5).
+    4. Runs the returned live Prisma transcript through the Credit Firewall into SQLite WAL.
+    """
+    settings = AppSettings(db_path=str(tmp_path / "live_e2e.db"))
+    if not settings.gnani_api_key or settings.gnani_api_key == "your_gnani_api_key_here":
+        pytest.skip("Set KADAL_GNANI_API_KEY in .env to run live Gnani WebSocket E2E test")
+
+    client = GnaniArthaSpeechClient(settings)
+
+    # 1. Synthesize real Tamil speech audio via live Gnani Timbre v2.5 WebSocket
+    spoken_trade_tamil = "குமரன் ஸ்டோர்ஸ்க்கு 20 கிலோ டைகர் பிரான் 500 ரேட்டு"
+    tts_telemetry = await client.synthesize_timbre_v25(spoken_trade_tamil, sample_rate=16000)
+
+    assert len(tts_telemetry.audio_wav_bytes) > 1024, "Timbre v2.5 must return real WAV bytes"
+    assert tts_telemetry.ttfb_ms > 0.0, "Measured TTFB latency must be positive"
+    assert tts_telemetry.was_interrupted is False
+
+    # 2. Strictly parse the WAV (no headerless fallback) and downsample 16kHz -> 8kHz telephony PCM
+    with wave.open(io.BytesIO(tts_telemetry.audio_wav_bytes), "rb") as wf:
+        assert (wf.getnchannels(), wf.getsampwidth(), wf.getframerate()) == (1, 2, 16000)
+        pcm_16k = wf.readframes(wf.getnframes())
+        assert len(pcm_16k) == len(tts_telemetry.audio_wav_bytes) - 44, "WAV header sizes must be exact"
+        src_rate = wf.getframerate()
+
+    pcm_8k, _ = audioop.ratecv(pcm_16k, 2, 1, src_rate, 8000, None)
+
+    # 3. Stream 8kHz PCM in 1,024-byte frames to live Gnani Prisma v2.5 WebSocket
+    live_segments: list[str] = []
+    live_latencies: list[float] = []
+
+    async def _on_live_segment(text: str, lat_ms: float) -> None:
+        if text.strip():
+            live_segments.append(text.strip())
+            live_latencies.append(lat_ms)
+
+    await client.stream_pcm_to_prisma_v25(
+        pcm_8k,
+        _on_live_segment,
+        sample_rate=8000,
+        lang_code="ta-IN",
+        enable_boosting=True,
+    )
+
+    merged_live_transcript = " ".join(live_segments)
+    assert len(merged_live_transcript) > 0, "Prisma v2.5 must return a live Tamil transcript"
+
+    # 4. Verify live transcript evaluates through the Credit Firewall
+    matcher = BilingualCatalogMatcher(settings.catalog_path)
+    repo = AppendOnlyLedgerRepository(settings.db_path, list(matcher.buyers.values()))
+    firewall = PreDispatchCreditFirewallService(settings, matcher, repo)
+
+    decisions = firewall.evaluate_utterance(merged_live_transcript)
+    assert len(decisions) >= 1
