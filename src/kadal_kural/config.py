@@ -6,10 +6,23 @@ Follows 12-Factor App principles by loading settings from environment variables.
 from __future__ import annotations
 
 from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
+
+# Gnani Prisma v2.5 wire format: strict 1,024-byte frames of 16-bit mono PCM.
+PCM_FRAME_BYTES: int = 1024
+PCM_SAMPLE_WIDTH_BYTES: int = 2
+SUPPORTED_PCM_SAMPLE_RATES: tuple[int, ...] = (8000, 16000)
+LIVE_MIC_SAMPLE_RATE: int = 8000
+WS_PING_INTERVAL_SEC: float = 20.0
+
+
+def frame_pace_seconds(sample_rate: int) -> float:
+    """Real-time duration of one 1,024-byte PCM frame at ``sample_rate`` (64ms @ 8kHz, 32ms @ 16kHz)."""
+    return (PCM_FRAME_BYTES / PCM_SAMPLE_WIDTH_BYTES) / sample_rate
 
 
 class AppSettings(BaseSettings):
@@ -28,6 +41,14 @@ class AppSettings(BaseSettings):
     prisma_ws_url: str = Field(default="wss://api.vachana.ai/stt/v3/stream")
     timbre_ws_url: str = Field(default="wss://api.vachana.ai/api/v1/tts")
     timbre_default_voice: str = Field(default="Asmita")
+
+    # Gnani WebSocket resilience
+    gnani_open_timeout_sec: float = Field(default=10.0, gt=0.0)
+    gnani_read_timeout_sec: float = Field(default=15.0, gt=0.0)
+    gnani_max_attempts: int = Field(default=3, ge=1, le=10)
+    gnani_backoff_base_sec: float = Field(default=0.5, ge=0.0)
+    stt_trailing_silence_margin_ms: int = Field(default=500, ge=0, le=5000)
+    stt_drain_grace_sec: float = Field(default=0.3, ge=0.0)
 
     # Acoustic & VAD Parameters (Tuned for 85dB Harbour/Mandi Telephony)
     vad_threshold: float = Field(default=0.78, ge=0.0, le=1.0)
