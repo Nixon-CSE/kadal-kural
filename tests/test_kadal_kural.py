@@ -171,3 +171,15 @@ async def test_live_gnani_timbre_to_prisma_roundtrip(tmp_path: Path) -> None:
 
     decisions = firewall.evaluate_utterance(merged_live_transcript)
     assert len(decisions) >= 1
+def test_normalize_hybrid_tamil_numerals_handles_prisma_currency_decoration() -> None:
+    assert normalize_hybrid_tamil_numerals("எழுநூற்றி ₹40") == "740"
+    assert normalize_hybrid_tamil_numerals("ஐநூற்றி ₹60") == "560"
+    assert normalize_hybrid_tamil_numerals("₹215") == "215"
+    assert normalize_hybrid_tamil_numerals("₹1,000") == "1000"
+
+
+def test_normalize_hybrid_tamil_numerals_unaffected_without_rupee_word() -> None:
+    # confirms the pre-existing behavior (no ரூபாய் word) still works unchanged
+    assert normalize_hybrid_tamil_numerals(
+        "குமரனுக்கு 10 கிலோ டைகர் பிரான் ரேட் எழுநூற்றி 40"
+    ) == "குமரனுக்கு 10 கிலோ டைகர் பிரான் ரேட் 740"

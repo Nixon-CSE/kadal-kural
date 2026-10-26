@@ -1,0 +1,18 @@
+{"label": "word_simple_25", "input_text": "இருபத்தி ஐந்து பாக்ஸ் வஞ்சரம்", "raw_transcript": "25 பாக்ஸ் வஞ்சரம்", "segment_count": 1, "stt_latency_ms": 246.0, "tts_ttfb_ms": 862.4, "elapsed_s": 6.41}
+{"label": "word_additive_740", "input_text": "எழுநூற்றி நாப்பது ரூபாய்", "raw_transcript": "எழுநூற்றி ₹40", "segment_count": 1, "stt_latency_ms": 206.0, "tts_ttfb_ms": 328.9, "elapsed_s": 5.79}
+{"label": "word_additive_560", "input_text": "ஐநூற்றி அறுபது ரூபாய்", "raw_transcript": "ஐநூற்றி ₹60", "segment_count": 1, "stt_latency_ms": 222.0, "tts_ttfb_ms": 378.1, "elapsed_s": 5.77}
+{"label": "word_additive_215", "input_text": "இருநூற்றி பதினைந்து ரூபாய்", "raw_transcript": "₹215", "segment_count": 1, "stt_latency_ms": 144.0, "tts_ttfb_ms": 504.1, "elapsed_s": 5.79}
+{"label": "word_round_hundred", "input_text": "நூறு பாக்ஸ்", "raw_transcript": "100 பாக்ஸ்", "segment_count": 1, "stt_latency_ms": 144.0, "tts_ttfb_ms": 307.9, "elapsed_s": 5.2}
+{"label": "word_round_thousand", "input_text": "ஆயிரம் ரூபாய்", "raw_transcript": "₹1,000", "segment_count": 1, "stt_latency_ms": 132.0, "tts_ttfb_ms": 321.2, "elapsed_s": 5.16}
+{"label": "word_lakh_phrase", "input_text": "ஒரு லட்சத்து இருபத்தி ஐயாயிரம் ரூபாய்", "raw_transcript": "1,00,000 இருபத்தி ஐயாயிரம் ரூபாய்", "segment_count": 1, "stt_latency_ms": 164.0, "tts_ttfb_ms": 339.3, "elapsed_s": 6.2}
+{"label": "digit_simple_25", "input_text": "25 பாக்ஸ் வஞ்சரம்", "raw_transcript": "25 பாக்ஸ் வஞ்சரம்", "segment_count": 1, "stt_latency_ms": 137.0, "tts_ttfb_ms": 432.6, "elapsed_s": 5.86}
+{"label": "digit_740", "input_text": "740 ரூபாய்", "raw_transcript": "₹740", "segment_count": 1, "stt_latency_ms": 127.0, "tts_ttfb_ms": 295.5, "elapsed_s": 6.14}
+{"label": "digit_three_digit_rate", "input_text": "செந்திலுக்கு 25 பாக்ஸ் வஞ்சரம் ரேட்டு 250", "raw_transcript": "செந்திலுக்கு 25 பாக்ஸ் வஞ்சரம் ரேட்டு 250", "segment_count": 1, "stt_latency_ms": 190.0, "tts_ttfb_ms": 388.9, "elapsed_s": 8.01}
+{"label": "hybrid_740_digit", "input_text": "எழுநூற்றி 40 ரூபாய்", "raw_transcript": "எழுநூற்றி ₹40", "segment_count": 1, "stt_latency_ms": 138.0, "tts_ttfb_ms": 484.7, "elapsed_s": 5.74}
+{"label": "hybrid_560_digit", "input_text": "ஐநூற்றி 60 ரூபாய்", "raw_transcript": "ஐநூற்றி ₹60", "segment_count": 1, "stt_latency_ms": 123.0, "tts_ttfb_ms": 513.5, "elapsed_s": 6.12}
+{"label": "hybrid_215_word", "input_text": "இருநூற்றி பதினைந்து ரூபாய் கணக்கில் போடு", "raw_transcript": "₹215 கணக்கில் போடு", "segment_count": 1, "stt_latency_ms": 137.0, "tts_ttfb_ms": 349.9, "elapsed_s": 6.45}
+{"label": "trade_senthil_full", "input_text": "செந்திலுக்கு இருபத்தி ஐந்து பாக்ஸ் வஞ்சரம் ரேட்டு இருநூற்று ஐம்பது", "raw_transcript": "செந்திலுக்கு 25 பாக்ஸ் வஞ்சிரம் ரேட்டு 250", "segment_count": 1, "stt_latency_ms": 295.0, "tts_ttfb_ms": 423.5, "elapsed_s": 8.97}
+{"label": "trade_kumaran_full", "input_text": "குமரனுக்கு பத்து கிலோ டைகர் பிரான் ரேட்டு எழுநூற்றி நாப்பது", "raw_transcript": "குமரனுக்கு 10 கிலோ டைகர் பிரான் ரேட் எழுநூற்றி 40", "segment_count": 1, "stt_latency_ms": 270.0, "tts_ttfb_ms": 323.6, "elapsed_s": 7.61}
+{"label": "trade_barge_in_override", "input_text": "செந்திலுக்கு இருபது பாக்ஸ் மட்டும் போடு", "raw_transcript": "செந்திலுக்கு 20 பாக்ஸ் மட்டும் போடு", "segment_count": 1, "stt_latency_ms": 224.0, "tts_ttfb_ms": 355.9, "elapsed_s": 6.38}
+{"label": "trade_tanglish_mixed", "input_text": "Senthil ku 25 box Vanjaram rate 250", "raw_transcript": "செந்தில்கு 25 பாக்ஸ் வஞ்சரம் ரேட் 250", "segment_count": 1, "stt_latency_ms": 172.0, "tts_ttfb_ms": 305.5, "elapsed_s": 7.75}
+{"label": "undo_command", "input_text": "கடைசி ஆர்டர் கேன்சல்", "raw_transcript": "கடைசி ஆர்டர் கேன்சல்", "segment_count": 1, "stt_latency_ms": 129.0, "tts_ttfb_ms": 292.0, "elapsed_s": 5.73}
