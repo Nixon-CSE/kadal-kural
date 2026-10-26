@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-from kadal_kural.config import AppSettings
+from kadal_kural.config import LIVE_MIC_SAMPLE_RATE, WS_PING_INTERVAL_SEC, AppSettings
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.infrastructure.gnani_client import (
@@ -190,7 +190,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         prisma_headers = {
             "x-api-key-id": cfg.gnani_api_key,
             "lang_code": "ta-IN",
-            "x-sample-rate": "8000",
+            "x-sample-rate": str(LIVE_MIC_SAMPLE_RATE),
             "x-format": "transcribe",
             "x-vad-threshold": str(cfg.vad_threshold),
             "x-min-speech-ms": str(cfg.min_speech_ms),
@@ -227,7 +227,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             async with websockets.connect(
                 cfg.prisma_ws_url,
                 additional_headers=prisma_headers,
-                ping_interval=20,
+                ping_interval=WS_PING_INTERVAL_SEC,
             ) as prisma_ws:
                 handshake = json.loads(await prisma_ws.recv())
                 await prisma_ws.send(speech_client.build_runtime_settings_frame())
@@ -439,9 +439,18 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
       };
 
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, sampleRate: 8000, echoCancellation: true, noiseSuppression: false }
+        audio: { channelCount: 1, sampleRate: __MIC_RATE__, echoCancellation: true, noiseSuppression: false }
       });
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 8000 });
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: __MIC_RATE__ });
+      if (audioCtx.sampleRate !== __MIC_RATE__) {
+        // The server declares x-sample-rate=__MIC_RATE__; streaming any other rate would be mis-transcribed.
+        const actual = audioCtx.sampleRate;
+        await audioCtx.close();
+        micStream.getTracks().forEach(tr => tr.stop());
+        ws.close();
+        statusEl.textContent = `Browser mic runs at ${actual} Hz; this build requires __MIC_RATE__ Hz. Use Chrome.`;
+        return;
+      }
       const source = audioCtx.createMediaStreamSource(micStream);
       processor = audioCtx.createScriptProcessor(512, 1, 1);
       processor.onaudioprocess = (e) => {
@@ -525,7 +534,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
     refresh();
   </script>
 </body>
-</html>"""
+</html>""".replace("__MIC_RATE__", str(LIVE_MIC_SAMPLE_RATE))
 
     return app
 
