@@ -14,6 +14,7 @@ from kadal_kural.domain.normalizer import (
     TRAILING_LEDGER_VERBS,
     normalize_hybrid_tamil_numerals,
     split_multi_trade_clauses,
+    strip_numeral_decoration,
     strip_tamil_dative_suffix,
 )
 
@@ -90,7 +91,15 @@ class BilingualCatalogMatcher:
 
         for clause in clauses:
             tokens = clause.split()
-            numeric_positions = [(i, int(tok)) for i, tok in enumerate(tokens) if tok.isdigit()]
+            # normalize_hybrid_tamil_numerals already resolves Prisma's '₹'/comma-decorated
+            # digit tokens, but strip_numeral_decoration is applied again here defensively
+            # in case any decorated token slips through unresolved (e.g. a shape not yet
+            # covered by that normalizer) rather than silently vanishing from numeric_positions.
+            numeric_positions: List[Tuple[int, int]] = []
+            for i, tok in enumerate(tokens):
+                bare_digits = strip_numeral_decoration(tok)
+                if bare_digits is not None:
+                    numeric_positions.append((i, int(bare_digits)))
             if not numeric_positions:
                 continue
 
