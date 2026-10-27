@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
 from kadal_kural.config import AppSettings
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.models import LedgerEventStatus
@@ -19,13 +22,52 @@ PLAYGROUND_SCREENSHOT_TRANSCRIPT = (
     "குமரனுக்கு 60 கிலோ டைகர் ஃப்ராண்ட் ஐநூற்றி 60 ரேட்டு கிரெடிட்டில் ஏற்று"
 )
 
+PROBE_RESULTS_PATH = Path(__file__).resolve().parents[1] / "tamil_itn_probe_results.jsonl"
 
-def test_normalize_hybrid_tamil_numerals_from_playground() -> None:
-    normalized = normalize_hybrid_tamil_numerals(PLAYGROUND_SCREENSHOT_TRANSCRIPT)
-    assert "740" in normalized
-    assert "560" in normalized
-    assert "எழுநூற்றி" not in normalized
-    assert "ஐநூற்றி" not in normalized
+# Expected normalizer output for the raw Prisma v2.5 transcript captured under each probe label
+# (scripts/probe_tamil_itn.py, live API). Each value was checked by hand against the spoken input.
+EXPECTED_NORMALIZED_OUTPUT_BY_LABEL = {
+    "word_simple_25": "25 பாக்ஸ் வஞ்சரம்",
+    "word_additive_740": "740",
+    "word_additive_560": "560",
+    "word_additive_215": "215",
+    "word_round_hundred": "100 பாக்ஸ்",
+    "word_round_thousand": "1000",
+    "digit_simple_25": "25 பாக்ஸ் வஞ்சரம்",
+    "digit_740": "740",
+    "digit_three_digit_rate": "செந்திலுக்கு 25 பாக்ஸ் வஞ்சரம் ரேட்டு 250",
+    "hybrid_740_digit": "740",
+    "hybrid_560_digit": "560",
+    "hybrid_215_word": "215 கணக்கில் போடு",
+    "trade_senthil_full": "செந்திலுக்கு 25 பாக்ஸ் வஞ்சிரம் ரேட்டு 250",
+    "trade_kumaran_full": "குமரனுக்கு 10 கிலோ டைகர் பிரான் ரேட் 740",
+    "trade_barge_in_override": "செந்திலுக்கு 20 பாக்ஸ் மட்டும் போடு",
+    "trade_tanglish_mixed": "செந்தில்கு 25 பாக்ஸ் வஞ்சரம் ரேட் 250",
+    "undo_command": "கடைசி ஆர்டர் கேன்சல்",
+}
+
+
+def _load_probe_transcripts() -> dict[str, str]:
+    records = [json.loads(line) for line in PROBE_RESULTS_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return {str(rec["label"]): str(rec["raw_transcript"]) for rec in records}
+
+
+def test_normalize_hybrid_tamil_numerals_against_live_probe_transcripts() -> None:
+    transcripts = _load_probe_transcripts()
+    assert len(EXPECTED_NORMALIZED_OUTPUT_BY_LABEL) >= 10
+    missing = set(EXPECTED_NORMALIZED_OUTPUT_BY_LABEL) - set(transcripts)
+    assert not missing, f"labels absent from {PROBE_RESULTS_PATH.name}: {sorted(missing)}"
+    for label, expected in EXPECTED_NORMALIZED_OUTPUT_BY_LABEL.items():
+        assert normalize_hybrid_tamil_numerals(transcripts[label]) == expected, label
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Known normalizer bug: 'இருபத்தி ஐயாயிரம்' (twenty-five thousand) after a lakh is summed as 20 + 5000",
+)
+def test_normalize_lakh_remainder_from_live_probe() -> None:
+    raw = _load_probe_transcripts()["word_lakh_phrase"]  # '1,00,000 இருபத்தி ஐயாயிரம் ரூபாய்'
+    assert normalize_hybrid_tamil_numerals(raw) == "125000 ரூபாய்"
 
 
 def test_strip_tamil_dative_suffixes() -> None:
@@ -105,10 +147,8 @@ def test_confidence_gate_blocks_unknown_buyer(tmp_path: Path) -> None:
     assert len(decisions) == 1
     assert decisions[0].status == LedgerEventStatus.PENDING_CLARIFICATION
 
-import audioop
 import io
 import wave
-import pytest
 from kadal_kural.infrastructure.gnani_client import GnaniArthaSpeechClient
 
 
@@ -121,6 +161,8 @@ async def test_live_gnani_timbre_to_prisma_roundtrip(tmp_path: Path) -> None:
     3. Streams exact 1,024-byte frames at 64ms intervals to wss://api.vachana.ai/stt/v3/stream (Prisma v2.5).
     4. Runs the returned live Prisma transcript through the Credit Firewall into SQLite WAL.
     """
+    import audioop  # removed in Python 3.13; imported here so collection works on newer interpreters
+
     settings = AppSettings(db_path=str(tmp_path / "live_e2e.db"))
     if not settings.gnani_api_key or settings.gnani_api_key == "your_gnani_api_key_here":
         pytest.skip("Set KADAL_GNANI_API_KEY in .env to run live Gnani WebSocket E2E test")
@@ -171,15 +213,3 @@ async def test_live_gnani_timbre_to_prisma_roundtrip(tmp_path: Path) -> None:
 
     decisions = firewall.evaluate_utterance(merged_live_transcript)
     assert len(decisions) >= 1
-def test_normalize_hybrid_tamil_numerals_handles_prisma_currency_decoration() -> None:
-    assert normalize_hybrid_tamil_numerals("எழுநூற்றி ₹40") == "740"
-    assert normalize_hybrid_tamil_numerals("ஐநூற்றி ₹60") == "560"
-    assert normalize_hybrid_tamil_numerals("₹215") == "215"
-    assert normalize_hybrid_tamil_numerals("₹1,000") == "1000"
-
-
-def test_normalize_hybrid_tamil_numerals_unaffected_without_rupee_word() -> None:
-    # confirms the pre-existing behavior (no ரூபாய் word) still works unchanged
-    assert normalize_hybrid_tamil_numerals(
-        "குமரனுக்கு 10 கிலோ டைகர் பிரான் ரேட் எழுநூற்றி 40"
-    ) == "குமரனுக்கு 10 கிலோ டைகர் பிரான் ரேட் 740"
