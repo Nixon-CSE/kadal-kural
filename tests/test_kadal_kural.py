@@ -61,10 +61,6 @@ def test_normalize_hybrid_tamil_numerals_against_live_probe_transcripts() -> Non
         assert normalize_hybrid_tamil_numerals(transcripts[label]) == expected, label
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known normalizer bug: 'இருபத்தி ஐயாயிரம்' (twenty-five thousand) after a lakh is summed as 20 + 5000",
-)
 def test_normalize_lakh_remainder_from_live_probe() -> None:
     raw = _load_probe_transcripts()["word_lakh_phrase"]  # '1,00,000 இருபத்தி ஐயாயிரம் ரூபாய்'
     assert normalize_hybrid_tamil_numerals(raw) == "125000 ரூபாய்"

@@ -51,6 +51,16 @@ TAMIL_NUMBER_WORDS: Final[Dict[str, int]] = {
 # standalone "லட்சம்" (bare "one lakh") handled as an ordinary TAMIL_NUMBER_WORDS entry.
 TAMIL_LAKH_CONNECTOR: Final[str] = "லட்சத்து"
 
+# "<tens>த்தி <N>-thousand word" means (tens + N) thousand, e.g. "இருபத்தி ஐயாயிரம்" is
+# 20 + 5 thousand = 25,000 (not 20 + 5,000). Only the connective "-த்தி" tens forms are
+# affected; a bare "இருபது ஆயிரம்" is ordinary multiplication and is left alone.
+TAMIL_CONNECTIVE_TENS_SUFFIX: Final[str] = "த்தி"
+THOUSAND: Final[int] = 1000
+CONNECTIVE_TENS_MIN: Final[int] = 20
+CONNECTIVE_TENS_MAX: Final[int] = 90
+MULTI_THOUSAND_MIN: Final[int] = 2 * THOUSAND
+MULTI_THOUSAND_MAX: Final[int] = 9 * THOUSAND
+
 CANONICAL_UNIT_MAP: Final[Dict[str, str]] = {
     "பாக்ஸ்": "box", "பெட்டி": "box", "box": "box", "boxes": "box",
     "கிலோ": "kg", "கேஜி": "kg", "kilo": "kg", "kg": "kg",
@@ -83,6 +93,22 @@ def strip_numeral_decoration(token: str) -> Optional[str]:
     return stripped if stripped.isdigit() else None
 
 
+def _fold_connective_tens_with_thousands(token: str, next_tok: str) -> Optional[int]:
+    """
+    Returns (tens + N) * 1000 for "<tens>த்தி <N-thousand word>" (e.g. 'இருபத்தி ஐயாயிரம்'
+    -> 25000), or None if the pair doesn't have that shape.
+    """
+    tens = TAMIL_NUMBER_WORDS.get(token)
+    thousands = TAMIL_NUMBER_WORDS.get(next_tok)
+    if tens is None or thousands is None or not token.endswith(TAMIL_CONNECTIVE_TENS_SUFFIX):
+        return None
+    if not CONNECTIVE_TENS_MIN <= tens <= CONNECTIVE_TENS_MAX or tens % 10 != 0:
+        return None
+    if not MULTI_THOUSAND_MIN <= thousands <= MULTI_THOUSAND_MAX or thousands % THOUSAND != 0:
+        return None
+    return (tens + thousands // THOUSAND) * THOUSAND
+
+
 def _sum_trailing_number_words(tokens: List[str], start_idx: int) -> Tuple[int, int]:
     """
     Greedily consumes consecutive still-unresolved Tamil number-word (and additive-prefix
@@ -94,7 +120,8 @@ def _sum_trailing_number_words(tokens: List[str], start_idx: int) -> Tuple[int, 
     remainder as untouched Tamil words it never adds in itself, e.g.:
         'ஒரு லட்சத்து இருபத்தி ஐயாயிரம் ரூபாய்' -> '1,00,000 இருபத்தி ஐயாயிரம் ரூபாய்'
     This is a best-effort additive fold of the trailing words, not full Indian-numbering
-    grammar — it has only been validated against the lakh-phrase sample above.
+    grammar — it has only been validated against the lakh-phrase sample above (live probe
+    label 'word_lakh_phrase', see tamil_itn_probe_results.jsonl).
     """
     idx = start_idx
     total = len(tokens)
@@ -123,6 +150,12 @@ def _sum_trailing_number_words(tokens: List[str], start_idx: int) -> Tuple[int, 
             first_val = TAMIL_NUMBER_WORDS[token]
             if idx + 1 < total:
                 next_tok = tokens[idx + 1]
+                folded = _fold_connective_tens_with_thousands(token, next_tok)
+                if folded is not None:
+                    running_sum += folded
+                    idx += 2
+                    consumed += 2
+                    continue
                 bare = strip_numeral_decoration(next_tok)
                 second_val = int(bare) if bare is not None else TAMIL_NUMBER_WORDS.get(next_tok, 0)
                 if first_val >= 20 and 0 < second_val < first_val:
@@ -145,7 +178,7 @@ def normalize_hybrid_tamil_numerals(utterance: str) -> str:
     Deterministically resolves hybrid Tamil-word + Arabic-digit numerals emitted by
     Gnani Prisma V2.5 (e.g., 'எழுநூற்றி 40' -> '740', 'ஐநூற்றி 60' -> '560'), including
     Prisma's live currency/grouping decoration ('எழுநூற்றி ₹40' -> '740', '₹1,000' -> '1000')
-    and lakh-scale phrases ('ஒரு லட்சத்து இருபத்தி ஐயாயிரம்' -> '125020').
+    and lakh-scale phrases ('ஒரு லட்சத்து இருபத்தி ஐயாயிரம்' -> '125000').
 
     Live-probe findings this is built against (see scripts/probe_tamil_itn.py):
       - Without the word 'ரூபாய்' present, hybrid additive phrases already arrive exactly
@@ -155,7 +188,8 @@ def normalize_hybrid_tamil_numerals(utterance: str) -> str:
         whole amount into one decorated/grouped token ('₹215', '₹1,000') and drops the
         prefix word entirely. Both are handled below.
       - Lakh-scale amounts only get the leading lakh portion digit-converted; the additive
-        remainder is left as unconverted words and is folded in by _sum_trailing_number_words.
+        remainder is left as unconverted words and is folded in by _sum_trailing_number_words
+        ('1,00,000 இருபத்தி ஐயாயிரம் ரூபாய்' is one lakh twenty-five thousand = 125000).
     """
     tokens = utterance.strip().split()
     resolved: List[str] = []
@@ -189,6 +223,14 @@ def normalize_hybrid_tamil_numerals(utterance: str) -> str:
                 continue
             if next_tok in TAMIL_NUMBER_WORDS:
                 resolved.append(str(base_val + TAMIL_NUMBER_WORDS[next_tok]))
+                idx += 2
+                continue
+
+        # Connective tens + N-thousand word, e.g. "இருபத்தி ஐயாயிரம்" -> 25000
+        if idx + 1 < total:
+            folded = _fold_connective_tens_with_thousands(token, tokens[idx + 1])
+            if folded is not None:
+                resolved.append(str(folded))
                 idx += 2
                 continue
 
