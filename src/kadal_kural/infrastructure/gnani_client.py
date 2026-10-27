@@ -384,6 +384,7 @@ class GnaniArthaSpeechClient:
         sample_rate: int = 8000,
         lang_code: str = "ta-IN",
         enable_boosting: bool = True,
+        append_trailing_silence: bool = True,
     ) -> None:
         """
         Streams raw 16-bit mono PCM audio in strict 1,024-byte frames to Gnani Prisma v2.5,
@@ -392,7 +393,8 @@ class GnaniArthaSpeechClient:
         The server VAD only closes an utterance after it *receives* ``x-min-silence-ms`` of
         silent audio, so trailing zero-PCM is streamed after the speech (waiting does not
         work). Afterwards the call waits, bounded by the read timeout, for every utterance
-        that began to produce its transcript.
+        that began to produce its transcript. Pass ``append_trailing_silence=False`` when the
+        caller supplies its own tail (e.g. noise-only audio) so the VAD sees it instead.
         """
         api_key = self._require_api_key()
         if sample_rate not in SUPPORTED_PCM_SAMPLE_RATES:
@@ -415,6 +417,7 @@ class GnaniArthaSpeechClient:
                 sample_rate=sample_rate,
                 lang_code=lang_code,
                 enable_boosting=enable_boosting,
+                append_trailing_silence=append_trailing_silence,
             )
 
         await self._with_retry("Prisma v2.5 STT", _attempt, lambda: delivered)
@@ -428,6 +431,7 @@ class GnaniArthaSpeechClient:
         sample_rate: int,
         lang_code: str,
         enable_boosting: bool,
+        append_trailing_silence: bool,
     ) -> None:
         cfg = self._settings
         pace_sec = frame_pace_seconds(sample_rate)
@@ -443,7 +447,11 @@ class GnaniArthaSpeechClient:
             "x-enable-substitution": "true" if enable_boosting else "false",
         }
         silence_ms = cfg.min_silence_ms + cfg.stt_trailing_silence_margin_ms
-        silence = bytes(int(sample_rate * PCM_SAMPLE_WIDTH_BYTES * silence_ms / 1000.0))
+        silence = (
+            bytes(int(sample_rate * PCM_SAMPLE_WIDTH_BYTES * silence_ms / 1000.0))
+            if append_trailing_silence
+            else b""
+        )
         open_utterances: Set[str] = set()
 
         async with websockets.connect(
