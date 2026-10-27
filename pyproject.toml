@@ -14,9 +14,9 @@ authors = [{ name = "Nixon Immanuel Motha" }]
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "benchmark"]
 
 [tool.ruff]
 line-length = 100

@@ -24,3 +24,6 @@ build/
 dist/
 *.egg-info/
 .DS_Store
+
+# Benchmark transcript/audio cache (regenerable)
+benchmark/.cache/
