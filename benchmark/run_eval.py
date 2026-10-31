@@ -282,6 +282,28 @@ def build_work_items(
     return items
 
 
+def parse_conditions(spec: str) -> List[Tuple[str, Optional[float]]]:
+    """Parses ``clean,harbour:10,market:5`` into (profile, snr_db) pairs (snr None for clean)."""
+    out: List[Tuple[str, Optional[float]]] = []
+    for token in (t.strip() for t in spec.split(",") if t.strip()):
+        if token == CLEAN_PROFILE:
+            out.append((CLEAN_PROFILE, None))
+            continue
+        profile, _, snr = token.partition(":")
+        if profile not in NOISE_PROFILE_NAMES or not snr:
+            raise ValueError(f"bad condition {token!r}; expected 'clean' or '<profile>:<snr_db>'")
+        out.append((profile, float(snr)))
+    return out
+
+
+def filter_conditions(items: Sequence[WorkItem], spec: Optional[str]) -> List[WorkItem]:
+    """Keeps only items whose (profile, snr) is listed in ``spec`` (all items when spec is None)."""
+    if spec is None:
+        return list(items)
+    wanted = set(parse_conditions(spec))
+    return [i for i in items if (i.profile, i.snr_db) in wanted]
+
+
 def sample_corpus(corpus: Sequence[BenchmarkUtterance], limit: Optional[int]) -> List[BenchmarkUtterance]:
     """Deterministic evenly-strided sample so a small ``--limit`` still spans every category."""
     if limit is None or limit >= len(corpus):
@@ -689,6 +711,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--limit", type=int, help="evaluate only N utterances (evenly strided sample)")
     p.add_argument("--profiles", nargs="+", default=list(NOISE_PROFILE_NAMES), choices=NOISE_PROFILE_NAMES)
     p.add_argument("--snrs", nargs="+", type=float, default=list(STANDARD_SNR_LEVELS_DB))
+    p.add_argument("--conditions", help="comma list like 'clean,harbour:10,market:5'; overrides --profiles/--snrs")
     p.add_argument("--no-clean", action="store_true", help="skip the zero-noise baseline row")
     p.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
     p.add_argument("--cache-dir", type=Path, default=_REPO_ROOT / "benchmark" / ".cache")
@@ -701,7 +724,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 async def main_async(args: argparse.Namespace) -> int:
     settings = AppSettings()
     corpus = sample_corpus(build_corpus(), args.limit)
-    items = build_work_items(corpus, args.profiles, args.snrs, not args.no_clean)
+    items = filter_conditions(
+        build_work_items(corpus, args.profiles, args.snrs, not args.no_clean), args.conditions
+    )
     tail_ms = settings.min_silence_ms + settings.stt_trailing_silence_margin_ms
     cache = DiskCache(args.cache_dir, settings, LEAD_IN_MS, tail_ms)
 
@@ -731,9 +756,14 @@ async def main_async(args: argparse.Namespace) -> int:
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_csv(rows, args.out_dir / "results.csv")
+    grid = (
+        f"conditions [{args.conditions}]"
+        if args.conditions
+        else f"{len(args.profiles)} profiles × {len(args.snrs)} SNR levels"
+        f"{'' if args.no_clean else ' + clean baseline'}"
+    )
     scope = (
-        f"{len(corpus)} utterances × {len(args.profiles)} profiles × {len(args.snrs)} SNR levels"
-        f"{'' if args.no_clean else ' + clean baseline'} = {len(items)} items"
+        f"{len(corpus)} utterances × {grid} = {len(items)} items"
         f"{' (SAMPLE RUN — not the full sweep)' if args.limit else ''}"
     )
     report = render_report(rows, sweep, settings, {"date": date.today().isoformat(), "scope": scope})

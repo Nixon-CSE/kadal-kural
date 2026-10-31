@@ -219,3 +219,16 @@ def test_summarize_pools_sfer_over_trades(scorer: Scorer) -> None:
     assert cell.trades == 2 and cell.errors_gated == 1 and cell.sfer_gated == pytest.approx(0.5)
     assert cell.entity_accuracy["rate"] == pytest.approx(0.5)
     assert cell.stt_p50 == pytest.approx(200.0)
+
+
+def test_conditions_filter_selects_only_listed_cells() -> None:
+    from benchmark.run_eval import build_work_items, filter_conditions, parse_conditions
+
+    corpus = build_corpus()[:2]
+    items = build_work_items(corpus, ["harbour", "market"], [10.0, 5.0], True)
+    kept = filter_conditions(items, "clean,harbour:10")
+    assert {(i.profile, i.snr_db) for i in kept} == {("clean", None), ("harbour", 10.0)}
+    assert len(kept) == 4
+    assert parse_conditions("market:5") == [("market", 5.0)]
+    with __import__("pytest").raises(ValueError):
+        parse_conditions("harbour")
