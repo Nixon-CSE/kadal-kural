@@ -136,3 +136,17 @@ Ruling out each candidate:
 - **Prisma:** in every stall `speech_start` arrived on time and the connection was normal, then the final transcript came ~9.9 s after the audio ended, with Prisma's own `latency` field at ~10.4 s. All four stalls fell inside one ~2-minute window (08:55:34–08:57:26), interleaved with normal streams on the same client, which points to a transient server-side condition with a ~10 s fixed delay. The stalled transcripts were still correct.
 
 Impact: when it happens, the trader waits ~10 s longer for the decision. Our side can only bound it (`gnani_read_timeout_sec`) or report it; the fix belongs to Prisma.
+
+## Barge-in stop time (live Timbre)
+
+Measured with `scripts/measure_barge_in.py` (raw trials: `benchmark/barge_in_trials.jsonl`). Each trial synthesizes the firewall's real credit-hold alert (221 characters) with live Timbre v2.5, waits for the first audio byte, triggers `trigger_barge_in_abort()` at a seeded-random point inside the measured streaming window, and records **abort → Timbre socket closed** (`SynthesisTelemetry.abort_to_close_ms`, from the trigger until `ws.close()` returns). Trials where Timbre finished streaming before the trigger don't count. 2026-10-31, one trial at a time.
+
+| code | counted trials | abort → socket closed, P50 | P95 | max | trials ≥ 10 s |
+|---|---|---|---|---|---|
+| before: abort checked only when the next frame arrives | 24 (of 33) | 1,056.3 ms | 1,146.2 ms | 1,216.2 ms | 0 |
+| + wait for next frame **or** abort (`asyncio.wait`, `FIRST_COMPLETED`) | 24 (of 33) | 1,077.9 ms | 8,673.4 ms | 10,002.8 ms | 2 |
+| + cap the closing handshake (`TIMBRE_CLOSE_TIMEOUT_SEC` = 0.05 s) | 24 (of 25) | **52.3 ms** | **52.5 ms** | 52.6 ms | 0 |
+
+What the numbers showed: the `FIRST_COMPLETED` change works (abort → `close()` called dropped to 0.2–1.6 ms in a split-timing check) and is covered by a mocked-socket test where the next frame never arrives, but live Timbre streams frames often enough that the next-frame wait was never the cost. The cost was the WebSocket closing handshake: Timbre answers our close frame ~1 s late and sometimes not at all, when `websockets`' default 10 s `close_timeout` expires (the two 10 s trials). Since an aborted stream is discarded, the client now waits at most 50 ms for that reply before dropping the connection, so the stop time is bounded by that cap.
+
+Timbre first byte (request → first audio byte) from the same trials: P50 375 / P95 525 ms (before, n = 33), 305 / 471 ms (n = 33), 357 / 422 ms (final, n = 25).

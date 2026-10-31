@@ -27,6 +27,7 @@ from kadal_kural.config import (
     PCM_FRAME_BYTES,
     PCM_SAMPLE_WIDTH_BYTES,
     SUPPORTED_PCM_SAMPLE_RATES,
+    TIMBRE_CLOSE_TIMEOUT_SEC,
     WS_PING_INTERVAL_SEC,
     AppSettings,
     frame_pace_seconds,
@@ -59,6 +60,7 @@ class SynthesisTelemetry:
     ttfb_ms: float
     total_synthesis_ms: float
     was_interrupted: bool
+    abort_to_close_ms: Optional[float] = None  # trigger_barge_in_abort() -> socket closed
 
 
 @dataclass(frozen=True)
@@ -231,6 +233,7 @@ class GnaniArthaSpeechClient:
     def __init__(self, settings: AppSettings) -> None:
         self._settings = settings
         self._barge_in_abort_event = asyncio.Event()
+        self._abort_triggered_ns = 0
 
     def trigger_barge_in_abort(self) -> float:
         """
@@ -238,6 +241,7 @@ class GnaniArthaSpeechClient:
         Returns the timestamp (perf_counter) when the barge-in interrupt was triggered.
         """
         t0 = time.perf_counter()
+        self._abort_triggered_ns = time.perf_counter_ns()
         self._barge_in_abort_event.set()
         return t0
 
@@ -380,12 +384,14 @@ class GnaniArthaSpeechClient:
             chunks: Dict[int, bytes] = {}
             ttfb_ms = 0.0
             was_interrupted = False
+            abort_to_close_ms: Optional[float] = None
 
             async with websockets.connect(
                 self._settings.timbre_ws_url,
                 additional_headers={"Content-Type": "application/json", "X-API-Key-ID": api_key},
                 ping_interval=WS_PING_INTERVAL_SEC,
                 open_timeout=self._settings.gnani_open_timeout_sec,
+                close_timeout=TIMBRE_CLOSE_TIMEOUT_SEC,
             ) as ws:
                 await ws.send(
                     json.dumps(
@@ -407,28 +413,40 @@ class GnaniArthaSpeechClient:
                     )
                 )
 
-                while True:
-                    msg = await self._recv_json(ws)
-                    if self._barge_in_abort_event.is_set():
-                        was_interrupted = True
-                        await ws.close()
-                        break
+                # Wait for the next frame *or* the barge-in abort, whichever comes first, so an
+                # abort never waits for Timbre's next chunk (or for the read timeout).
+                abort_waiter = asyncio.ensure_future(self._barge_in_abort_event.wait())
+                try:
+                    while True:
+                        next_frame = asyncio.ensure_future(self._recv_json(ws))
+                        await asyncio.wait({next_frame, abort_waiter}, return_when=asyncio.FIRST_COMPLETED)
+                        if self._barge_in_abort_event.is_set():
+                            next_frame.cancel()
+                            await asyncio.gather(next_frame, return_exceptions=True)
+                            was_interrupted = True
+                            await ws.close()
+                            abort_to_close_ms = _elapsed_ms(self._abort_triggered_ns, time.perf_counter_ns())
+                            break
+                        msg = next_frame.result()
 
-                    data = msg.get("data")
-                    data = data if isinstance(data, dict) else {}
-                    audio_b64 = data.get("audio")
-                    if audio_b64:
-                        if ttfb_ms == 0.0:
-                            ttfb_ms = round((time.perf_counter() - t_start) * 1000.0, 1)
-                            if on_first_audio is not None:
-                                on_first_audio()
-                        received_audio = True
-                        raw_index = data.get("chunk_index")
-                        index = raw_index if isinstance(raw_index, int) else len(chunks) + 1
-                        chunks[index] = base64.b64decode(str(audio_b64))
+                        data = msg.get("data")
+                        data = data if isinstance(data, dict) else {}
+                        audio_b64 = data.get("audio")
+                        if audio_b64:
+                            if ttfb_ms == 0.0:
+                                ttfb_ms = round((time.perf_counter() - t_start) * 1000.0, 1)
+                                if on_first_audio is not None:
+                                    on_first_audio()
+                            received_audio = True
+                            raw_index = data.get("chunk_index")
+                            index = raw_index if isinstance(raw_index, int) else len(chunks) + 1
+                            chunks[index] = base64.b64decode(str(audio_b64))
 
-                    if msg.get("type") == "complete" or data.get("is_final"):
-                        break
+                        if msg.get("type") == "complete" or data.get("is_final"):
+                            break
+                finally:
+                    abort_waiter.cancel()
+                    await asyncio.gather(abort_waiter, return_exceptions=True)
 
             audio = finalize_streamed_wav(b"".join(chunks[i] for i in sorted(chunks)))
             return SynthesisTelemetry(
@@ -436,6 +454,7 @@ class GnaniArthaSpeechClient:
                 ttfb_ms=ttfb_ms,
                 total_synthesis_ms=round((time.perf_counter() - t_start) * 1000.0, 1),
                 was_interrupted=was_interrupted,
+                abort_to_close_ms=abort_to_close_ms,
             )
 
         return await self._with_retry("Timbre v2.5 TTS", _attempt, lambda: received_audio)

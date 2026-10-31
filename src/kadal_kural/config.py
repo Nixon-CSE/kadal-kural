@@ -18,6 +18,11 @@ PCM_SAMPLE_WIDTH_BYTES: int = 2
 SUPPORTED_PCM_SAMPLE_RATES: tuple[int, ...] = (8000, 16000)
 LIVE_MIC_SAMPLE_RATE: int = 8000
 WS_PING_INTERVAL_SEC: float = 20.0
+# How long a Timbre socket waits for the server's reply to our close frame before dropping
+# the TCP connection. Measured live (benchmark/REPORT.md, barge-in section): Timbre answers a
+# close ~1 s late and sometimes never (websockets' default 10 s timeout then expires), which
+# was the whole barge-in stop time. The stream is being discarded, so the reply isn't needed.
+TIMBRE_CLOSE_TIMEOUT_SEC: float = 0.05
 
 # Unit confidence when the word after the quantity isn't a recognised unit and the matcher
 # falls back to the SKU's default_unit (e.g. 'kg' heard as 'கார்'). Deliberately below the

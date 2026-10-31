@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Union
 import pytest
 from websockets.exceptions import ConnectionClosedError
 
-from kadal_kural.config import AppSettings
+from kadal_kural.config import TIMBRE_CLOSE_TIMEOUT_SEC, AppSettings
 from kadal_kural.infrastructure import gnani_client
 from kadal_kural.infrastructure.gnani_client import (
     GnaniArthaSpeechClient,
@@ -327,3 +327,26 @@ async def test_stt_reports_attempts_and_when_each_event_arrived(
     ]
     assert telemetry.final_transcript_after_audio_ms == telemetry.events[-1].received_after_audio_end_ms
     assert min(telemetry.connect_ms, telemetry.audio_send_ms, telemetry.drain_ms) >= 0.0
+
+
+async def test_barge_in_closes_the_socket_without_waiting_for_a_frame_that_never_comes(
+    settings: AppSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # one audio chunk, then the server goes silent (FakeWS hangs once its script is empty)
+    ws = FakeWS([_audio(1, _wav_header_streaming())])
+    fake = _patch_connect(monkeypatch, [ws])
+    patient = settings.model_copy(update={"gnani_read_timeout_sec": 30.0})  # so only abort can end it
+    client = GnaniArthaSpeechClient(patient)
+    first_audio = asyncio.Event()
+    task = asyncio.create_task(client.synthesize_timbre_v25("வணக்கம்", on_first_audio=first_audio.set))
+    await asyncio.wait_for(first_audio.wait(), timeout=1.0)
+
+    loop = asyncio.get_running_loop()
+    triggered = loop.time()
+    client.trigger_barge_in_abort()
+    telemetry = await asyncio.wait_for(task, timeout=1.0)
+    assert loop.time() - triggered < 0.1
+    assert telemetry.was_interrupted and ws.closed
+    assert telemetry.abort_to_close_ms is not None and telemetry.abort_to_close_ms < 100.0
+    # Timbre answers close frames late or never, so the handshake wait is capped
+    assert fake.last_kwargs["close_timeout"] == TIMBRE_CLOSE_TIMEOUT_SEC
