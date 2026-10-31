@@ -76,7 +76,7 @@ def _decision_items(turn: VoiceTurn) -> List[Dict[str, Any]]:
 
 class UtteranceIngestRequest(BaseModel):
     transcript: str = Field(..., min_length=2)
-    stt_latency_ms: float = Field(default=288.0, ge=0.0)
+    stt_latency_ms: float = Field(default=0.0, ge=0.0)  # only a caller-measured STT figure; no STT runs here
     synthesize_tts: bool = Field(default=True)
 
 
@@ -210,7 +210,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         """
         Full-duplex live audio bridge:
         Browser Mic (8kHz 16-bit PCM) -> 1,024-byte RingBuffer -> Gnani Prisma v2.5 WS
-        -> 1.5s TradeAssembler -> Credit Firewall -> Gnani Timbre v2.5 WS -> Browser Speaker.
+        -> TradeAssembler (assembler_window_sec) -> Credit Firewall -> Gnani Timbre v2.5 WS -> Browser Speaker.
         """
         await client_ws.accept()
         if not cfg.gnani_api_key or cfg.gnani_api_key == "your_gnani_api_key_here":
@@ -283,7 +283,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                                 seg_text = str(evt.get("text", "")).strip()
                                 seg_lat = float(evt.get("latency", 0.0))
                                 if seg_text:
-                                    # Immediately tell browser to flush any playing TTS (Barge-In)
+                                    # Tell the browser to flush any playing TTS (Barge-In) before anything else
                                     speech_client.trigger_barge_in_abort()
                                     await client_ws.send_json(
                                         {
@@ -371,7 +371,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
   </div>
 
   <div id="streamStatus" class="stream-bar">
-    <strong>Live Pipeline Telemetry:</strong> Idle. Click "Start Live 8kHz Microphone Stream" to open a real-time 1,024-byte PCM stream to Gnani Prisma v2.5.
+    <strong>Live Pipeline Telemetry:</strong> Idle. Click "Start Live 8kHz Microphone Stream" to open a live, frame-paced 1,024-byte PCM stream to Gnani Prisma v2.5.
   </div>
 
   <div id="ttsBanner" class="alert-box"></div>
@@ -461,7 +461,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         }
         if (msg.type === "barge_in_and_segment") {
           stopCurrentTtsPlayback();
-          statusEl.innerHTML = `<strong>VAD Segment (${msg.stt_latency_ms}ms):</strong> "${msg.segment_text}" <em>(Assembling 1.5s window...)</em>`;
+          statusEl.innerHTML = `<strong>VAD Segment (${msg.stt_latency_ms}ms):</strong> "${msg.segment_text}" <em>(assembling segments...)</em>`;
         }
         if (msg.type === "credit_decisions") {
           const banner = document.getElementById("ttsBanner");
@@ -540,7 +540,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
       const res = await fetch("/api/v1/ingest", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({transcript: text, stt_latency_ms: 288.0, synthesize_tts: true})
+        body: JSON.stringify({transcript: text, synthesize_tts: true})
       });
       const out = await res.json();
       const banner = document.getElementById("ttsBanner");

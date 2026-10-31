@@ -4,7 +4,8 @@ Production WebSocket adapters for Gnani AI's Sovereign Artha Stack:
 - Timbre v2.5 Streaming Text-to-Speech (wss://api.vachana.ai/api/v1/tts)
 
 Enforces strict 1,024-byte binary PCM frame pacing, mid-session vocabulary boosting,
-and sub-50ms barge-in TTS stream cancellation.
+and barge-in TTS stream cancellation (abort -> socket closed P50 52.3 ms / P95 52.5 ms over
+24 live trials; measured: see benchmark/REPORT.md).
 """
 
 from __future__ import annotations
@@ -142,7 +143,7 @@ class AssembledUtterance:
 
 class MultiSegmentTradeAssembler:
     """
-    Stitches consecutive VAD speech segments across a sliding window (default 1.5s)
+    Stitches consecutive VAD speech segments across a sliding window (AppSettings.assembler_window_sec)
     so multi-trade single-breath utterances split by a brief breath pause are evaluated atomically.
     """
 
@@ -237,7 +238,9 @@ class GnaniArthaSpeechClient:
 
     def trigger_barge_in_abort(self) -> float:
         """
-        Signals any in-flight Timbre v2.5 synthesis stream to abort immediately.
+        Signals any in-flight Timbre v2.5 synthesis stream to abort; its socket is closed without
+        waiting for the next frame, and the close handshake is capped at TIMBRE_CLOSE_TIMEOUT_SEC
+        (measured abort -> closed: P50 52.3 ms / P95 52.5 ms, see benchmark/REPORT.md).
         Returns the timestamp (perf_counter) when the barge-in interrupt was triggered.
         """
         t0 = time.perf_counter()
