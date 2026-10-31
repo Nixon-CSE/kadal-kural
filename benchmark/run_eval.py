@@ -217,7 +217,11 @@ class LiveGnaniBackend:
 
 
 class DiskCache:
-    """Caches clean TTS audio per utterance and STT transcripts per item, keyed by run parameters."""
+    """
+    Caches clean TTS audio per utterance and STT transcripts per item, keyed by run parameters
+    and by a short sha256 of the utterance's spoken_text, so editing the corpus text misses
+    the cache instead of silently reusing stale audio and transcripts.
+    """
 
     def __init__(self, root: Path, settings: AppSettings, lead_ms: int, tail_ms: int) -> None:
         self.root = root
@@ -230,19 +234,25 @@ class DiskCache:
         self._tts_tag = hashlib.sha1(tts_key.encode()).hexdigest()[:8]
         self._stt_tag = hashlib.sha1(stt_key.encode()).hexdigest()[:8]
 
-    def _clean_path(self, utterance_id: str) -> Path:
-        return self.root / f"{utterance_id}.{self._tts_tag}.clean8k.pcm"
+    @staticmethod
+    def _text_tag(utterance: BenchmarkUtterance) -> str:
+        return hashlib.sha256(utterance.spoken_text.encode("utf-8")).hexdigest()[:12]
+
+    def _clean_path(self, utterance: BenchmarkUtterance) -> Path:
+        tags = f"{self._tts_tag}.{self._text_tag(utterance)}"
+        return self.root / f"{utterance.utterance_id}.{tags}.clean8k.pcm"
 
     def _transcript_path(self, item: WorkItem) -> Path:
-        name = f"{item.utterance.utterance_id}__{item.profile}__{item.snr_label}.{self._stt_tag}.json"
-        return self.root / name
+        utt = item.utterance
+        tags = f"{self._stt_tag}.{self._text_tag(utt)}"
+        return self.root / f"{utt.utterance_id}__{item.profile}__{item.snr_label}.{tags}.json"
 
-    def load_clean(self, utterance_id: str) -> Optional[Pcm]:
-        path = self._clean_path(utterance_id)
+    def load_clean(self, utterance: BenchmarkUtterance) -> Optional[Pcm]:
+        path = self._clean_path(utterance)
         return np.frombuffer(path.read_bytes(), dtype=np.int16) if path.exists() else None
 
-    def save_clean(self, utterance_id: str, samples: Pcm) -> None:
-        self._clean_path(utterance_id).write_bytes(samples.tobytes())
+    def save_clean(self, utterance: BenchmarkUtterance, samples: Pcm) -> None:
+        self._clean_path(utterance).write_bytes(samples.tobytes())
 
     def load_transcript(self, item: WorkItem) -> Optional[TranscriptOutcome]:
         path = self._transcript_path(item)
@@ -327,18 +337,18 @@ async def gather_transcripts(
     done = 0
 
     async def _clean_for(utt: BenchmarkUtterance) -> Pcm:
-        cached = cache.load_clean(utt.utterance_id)
+        cached = cache.load_clean(utt)
         if cached is not None:
             return cached
         if backend is None:
             raise LookupError("clean audio not cached (--analyze-only)")
         lock = clean_locks.setdefault(utt.utterance_id, asyncio.Lock())
         async with lock:
-            cached = cache.load_clean(utt.utterance_id)
+            cached = cache.load_clean(utt)
             if cached is None:
                 async with sem:
                     cached = await backend.synthesize_clean_8k(utt.spoken_text)
-                cache.save_clean(utt.utterance_id, cached)
+                cache.save_clean(utt, cached)
         return cached
 
     async def _one(item: WorkItem) -> None:
@@ -732,7 +742,7 @@ async def main_async(args: argparse.Namespace) -> int:
 
     pending_stt = [i for i in items if cache.load_transcript(i) is None]
     needs_tts = {i.utterance.utterance_id for i in pending_stt}
-    pending_tts = [u for u in corpus if u.utterance_id in needs_tts and cache.load_clean(u.utterance_id) is None]
+    pending_tts = [u for u in corpus if u.utterance_id in needs_tts and cache.load_clean(u) is None]
     logger.info(
         "plan: %d items over %d utterances; live calls needed: %d STT + %d TTS (rest cached)",
         len(items), len(corpus), len(pending_stt), len(pending_tts),

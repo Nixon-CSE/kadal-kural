@@ -194,6 +194,26 @@ def test_sweep_scores_writes_csv_report_and_reuses_cache(settings: AppSettings, 
     assert {k: v.transcript for k, v in again.items()} == {k: v.transcript for k, v in transcripts.items()}
 
 
+def test_changed_spoken_text_misses_the_cache(settings: AppSettings, tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    original = _utt("single_01")
+    edited = replace(original, spoken_text=original.spoken_text.replace("250", "650"))
+    items = build_work_items([original], ["harbour"], [10.0], include_clean=True)
+    cache = DiskCache(tmp_path / "cache", settings, 300, 860)
+    asyncio.run(gather_transcripts(items, FakeBackend({}), cache, settings, concurrency=2))
+    assert cache.load_clean(original) is not None
+    assert all(cache.load_transcript(i) is not None for i in items)
+
+    edited_items = build_work_items([edited], ["harbour"], [10.0], include_clean=True)
+    assert cache.load_clean(edited) is None
+    assert all(cache.load_transcript(i) is None for i in edited_items)
+
+    backend = FakeBackend({})
+    asyncio.run(gather_transcripts(edited_items, backend, cache, settings, concurrency=2))
+    assert backend.calls == {"tts": 1, "stt": len(edited_items)}  # re-recorded, not reused
+
+
 def test_failed_items_are_recorded_and_excluded_not_fatal(settings: AppSettings, scorer: Scorer, tmp_path: Path) -> None:
     items = build_work_items(sample_corpus(build_corpus(), 2), ["traffic"], [15.0], include_clean=False)
     cache = DiskCache(tmp_path / "cache", settings, 300, 860)
