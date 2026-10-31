@@ -483,6 +483,7 @@ class GnaniArthaSpeechClient:
                     if event_type == "speech_start":
                         open_utterances.add(utterance_id)
                     elif event_type == "transcript":
+                        logger.debug("Prisma raw transcript event: %s", event)
                         if event.get("is_final", True):
                             open_utterances.discard(utterance_id)
                         # Signal barge-in abort as soon as new user speech arrives
