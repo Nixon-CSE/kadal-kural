@@ -12,13 +12,18 @@ import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, List, Optional
 
+from kadal_kural.config import TIMING_PATH_PIPECAT
 from kadal_kural.domain.models import CreditGateDecision
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
+from kadal_kural.domain.telemetry import UtteranceEvaluation
 from kadal_kural.infrastructure.gnani_client import (
+    AssembledUtterance,
     GnaniArthaSpeechClient,
     MultiSegmentTradeAssembler,
     PCM1024RingBufferPacer,
+    SynthesisTelemetry,
 )
+from kadal_kural.infrastructure.voice_turn import run_voice_turn
 
 
 @dataclass(frozen=True)
@@ -109,7 +114,7 @@ class PipecatArthaPipelineRunner:
             # If TTS is currently queued, user speech automatically triggers barge-in flush
             if not self._tts_playback_queue.empty():
                 await self._handle_interruption(StartInterruptionFrame(reason="vad_speech_detected"))
-            await self._assembler.ingest_segment(frame.text, frame.stt_latency_ms)
+            await self._assembler.ingest_segment(frame.text, frame.stt_latency_ms, frame.timestamp_ns)
             return
 
         if isinstance(frame, InputAudioRawFrame):
@@ -134,22 +139,31 @@ class PipecatArthaPipelineRunner:
         self.last_barge_in_flush_ms = round((time.perf_counter() - t0) * 1000.0, 4)
         return self.last_barge_in_flush_ms
 
-    async def _handle_assembled_utterance(self, merged_text: str, mean_stt_ms: float) -> None:
-        decisions = self._firewall.evaluate_utterance(merged_text, stt_latency_ms=mean_stt_ms)
-        decision_frame = CreditDecisionFrame(decisions=decisions)
-        self._last_decision_frame = decision_frame
+    async def _handle_assembled_utterance(self, utterance: AssembledUtterance) -> None:
+        async def _emit_decisions(evaluation: UtteranceEvaluation) -> None:
+            decision_frame = CreditDecisionFrame(decisions=list(evaluation.decisions))
+            self._last_decision_frame = decision_frame
+            if self._on_decision_emitted is not None:
+                await self._on_decision_emitted(decision_frame)
 
-        if self._on_decision_emitted is not None:
-            await self._on_decision_emitted(decision_frame)
+        async def _emit_reply(decision: CreditGateDecision, telemetry: SynthesisTelemetry) -> None:
+            tts_frame = TTSAudioRawFrame(
+                decision=decision,
+                wav_bytes=telemetry.audio_wav_bytes,
+                ttfb_ms=telemetry.ttfb_ms,
+            )
+            await self._tts_playback_queue.put(tts_frame)
+            if self._on_tts_emitted is not None:
+                await self._on_tts_emitted(tts_frame)
 
-        if getattr(self, "_synthesize_flag", False):
-            for dec in decisions:
-                telemetry = await self._speech_client.synthesize_timbre_v25(dec.tts_response_tamil)
-                tts_frame = TTSAudioRawFrame(
-                    decision=dec,
-                    wav_bytes=telemetry.audio_wav_bytes,
-                    ttfb_ms=telemetry.ttfb_ms,
-                )
-                await self._tts_playback_queue.put(tts_frame)
-                if self._on_tts_emitted is not None:
-                    await self._on_tts_emitted(tts_frame)
+        await run_voice_turn(
+            self._firewall,
+            self._speech_client,
+            utterance.text,
+            path=TIMING_PATH_PIPECAT,
+            stt_latencies_ms=utterance.segment_latencies_ms,
+            first_segment_ns=utterance.first_segment_ns,
+            synthesize=getattr(self, "_synthesize_flag", False),
+            on_evaluated=_emit_decisions,
+            on_reply=_emit_reply,
+        )

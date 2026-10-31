@@ -287,3 +287,43 @@ async def test_stt_rejects_unsupported_sample_rate(settings: AppSettings) -> Non
         await GnaniArthaSpeechClient(settings).stream_pcm_to_prisma_v25(
             b"\x00" * 1024, _on_segment, sample_rate=44100
         )
+
+
+async def test_tts_signals_first_audio_exactly_once(settings: AppSettings, monkeypatch: pytest.MonkeyPatch) -> None:
+    ws = FakeWS([
+        _audio(1, _wav_header_streaming()),
+        _audio(2, b"\x01\x00" * 4),
+        _audio(3, b"\x02\x00" * 4, final=True),
+    ])
+    _patch_connect(monkeypatch, [ws])
+    signals: List[int] = []
+    telemetry = await GnaniArthaSpeechClient(settings).synthesize_timbre_v25(
+        "வணக்கம்", on_first_audio=lambda: signals.append(len(signals))
+    )
+    assert signals == [0]
+    assert len(telemetry.audio_wav_bytes) > 0
+
+
+async def test_stt_reports_attempts_and_when_each_event_arrived(
+    settings: AppSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = FakeWS([
+        _HANDSHAKE,
+        {"type": "speech_start", "utterance_id": "u1"},
+        {"type": "transcript", "text": "20 கிலோ", "latency": 210, "utterance_id": "u1", "is_final": True},
+    ])
+    _patch_connect(monkeypatch, [OSError("connection refused"), ws])
+
+    async def _on_segment(text: str, latency: float) -> None:
+        return None
+
+    telemetry = await GnaniArthaSpeechClient(settings).stream_pcm_to_prisma_v25(
+        b"\x10\x00" * 1024, _on_segment, sample_rate=16000, enable_boosting=False
+    )
+    assert telemetry.attempts == 2  # one refused connection, then success
+    assert [(e.event_type, e.utterance_id, e.reported_latency_ms, e.is_final) for e in telemetry.events] == [
+        ("speech_start", "u1", None, None),
+        ("transcript", "u1", 210.0, True),
+    ]
+    assert telemetry.final_transcript_after_audio_ms == telemetry.events[-1].received_after_audio_end_ms
+    assert min(telemetry.connect_ms, telemetry.audio_send_ms, telemetry.drain_ms) >= 0.0

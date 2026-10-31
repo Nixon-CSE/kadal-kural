@@ -245,6 +245,49 @@ def test_summarize_pools_sfer_over_trades(scorer: Scorer) -> None:
     assert cell.stt_p50 == pytest.approx(200.0)
 
 
+def test_stt_client_timing_round_trips_through_cache_csv_and_stage_table(
+    settings: AppSettings, scorer: Scorer, tmp_path: Path
+) -> None:
+    import json
+
+    from benchmark.run_eval import WorkItem, stage_latency_lines
+    from kadal_kural.infrastructure.gnani_client import PrismaEventTiming, PrismaStreamTelemetry
+
+    utt = _utt("single_01")
+    item = WorkItem(utt, "harbour", 10.0)
+    cache = DiskCache(tmp_path / "cache", settings, 300, 860)
+    timing = PrismaStreamTelemetry(
+        attempts=2, connect_ms=41.5, audio_send_ms=3200.0, drain_ms=420.0,
+        events=(
+            PrismaEventTiming("speech_start", "u1", -3000.0, None, None),
+            PrismaEventTiming("transcript", "u1", 395.4, 210.0, True),
+        ),
+    )
+    outcome = TranscriptOutcome(utt.spoken_text, 210.0, 1, stt_client=timing)
+    cache.save_transcript(item, outcome)
+    assert cache.load_transcript(item) == outcome
+
+    rows = score_rows([item], {(utt.utterance_id, "harbour", "10"): outcome}, scorer)
+    write_csv(rows, tmp_path / "results.csv")
+    with (tmp_path / "results.csv").open(encoding="utf-8") as fh:
+        (rec,) = list(csv.DictReader(fh))
+    assert (rec["stt_attempts"], rec["stt_connect_ms"], rec["stt_final_after_audio_ms"]) == ("2", "41.5", "395.4")
+    assert float(rec["gated_match_ms"]) > 0.0 and float(rec["gated_decide_ms"]) > 0.0
+
+    lines = stage_latency_lines(rows)
+    assert lines[2].startswith("| STT, Prisma-reported |") and "| 1 | 210 | 210 |" in lines[2]
+    assert lines[3].startswith("| STT, client-observed |") and "| 1 | 395 | 395 |" in lines[3]
+    assert [ln.split(" | ")[0] for ln in lines[5:]] == ["| normalize", "| match", "| decide"]
+
+    # a transcript cached before client-side timing existed still loads, just without it
+    legacy = WorkItem(utt, "market", 5.0)
+    cache.save_transcript(legacy, TranscriptOutcome("x", 1.0, 1))
+    raw = json.loads(next((tmp_path / "cache").glob("*__market__5.*.json")).read_text(encoding="utf-8"))
+    assert "stt_client" not in raw
+    loaded = cache.load_transcript(legacy)
+    assert loaded is not None and loaded.stt_client is None
+
+
 def test_regenerated_report_keeps_the_hand_maintained_tail() -> None:
     from benchmark.run_eval import MANUAL_SECTIONS_MARKER, keep_manual_sections
 

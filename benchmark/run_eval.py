@@ -32,10 +32,10 @@ import logging
 import sys
 import wave
 import zlib
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Protocol, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -59,6 +59,8 @@ from kadal_kural.config import AppSettings  # noqa: E402
 from kadal_kural.infrastructure.gnani_client import (  # noqa: E402
     GnaniArthaSpeechClient,
     GnaniConfigurationError,
+    PrismaEventTiming,
+    PrismaStreamTelemetry,
 )
 
 logger = logging.getLogger("benchmark")
@@ -171,9 +173,10 @@ class TranscriptOutcome:
     """STT result for one item (or the reason it failed)."""
 
     transcript: str
-    stt_latency_ms: float
+    stt_latency_ms: float  # Prisma-reported 'latency', mean over segments
     segment_count: int
     error: Optional[str] = None
+    stt_client: Optional[PrismaStreamTelemetry] = None  # None for transcripts cached before it existed
 
 
 class SpeechBackend(Protocol):
@@ -207,14 +210,14 @@ class LiveGnaniBackend:
                 segments.append(text.strip())
                 latencies.append(latency_ms)
 
-        await client.stream_pcm_to_prisma_v25(
+        stt_client = await client.stream_pcm_to_prisma_v25(
             pcm_8k,
             _on_segment,
             sample_rate=STT_SAMPLE_RATE,
             append_trailing_silence=False,  # the benchmark supplies a noisy tail itself
         )
         mean_latency = sum(latencies) / len(latencies) if latencies else 0.0
-        return TranscriptOutcome(" ".join(segments), round(mean_latency, 1), len(segments))
+        return TranscriptOutcome(" ".join(segments), round(mean_latency, 1), len(segments), stt_client=stt_client)
 
 
 # ------------------------------------------------------------------------------ cache
@@ -263,22 +266,33 @@ class DiskCache:
         if not path.exists():
             return None
         data = json.loads(path.read_text(encoding="utf-8"))
+        client = data.get("stt_client")
         return TranscriptOutcome(
-            str(data["transcript"]), float(data["stt_latency_ms"]), int(data["segment_count"])
+            str(data["transcript"]),
+            float(data["stt_latency_ms"]),
+            int(data["segment_count"]),
+            stt_client=None if client is None else _stt_client_from_json(client),
         )
 
     def save_transcript(self, item: WorkItem, outcome: TranscriptOutcome) -> None:
-        self._transcript_path(item).write_text(
-            json.dumps(
-                {
-                    "transcript": outcome.transcript,
-                    "stt_latency_ms": outcome.stt_latency_ms,
-                    "segment_count": outcome.segment_count,
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
+        record: Dict[str, object] = {
+            "transcript": outcome.transcript,
+            "stt_latency_ms": outcome.stt_latency_ms,
+            "segment_count": outcome.segment_count,
+        }
+        if outcome.stt_client is not None:
+            record["stt_client"] = asdict(outcome.stt_client)
+        self._transcript_path(item).write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+
+
+def _stt_client_from_json(data: Dict[str, Any]) -> PrismaStreamTelemetry:
+    return PrismaStreamTelemetry(
+        attempts=int(data["attempts"]),
+        connect_ms=float(data["connect_ms"]),
+        audio_send_ms=float(data["audio_send_ms"]),
+        drain_ms=float(data["drain_ms"]),
+        events=tuple(PrismaEventTiming(**event) for event in data["events"]),
+    )
 
 
 # ------------------------------------------------------------------------------ sweep
@@ -423,7 +437,9 @@ CSV_COLUMNS = [
     "utterance_id", "category", "profile", "snr_db", "n_truth_trades", "n_parsed_trades",
     *[f"{f}_correct" for f in ENTITY_FIELDS],
     "wer_raw", "wer_normalized", "stt_latency_ms",
+    "stt_attempts", "stt_connect_ms", "stt_audio_send_ms", "stt_final_after_audio_ms", "stt_drain_ms",
     "gated_booked", "gated_silent_errors", "gated_correct_bookings", "gated_decision_ms",
+    "gated_normalize_ms", "gated_match_ms", "gated_decide_ms",
     "ungated_booked", "ungated_silent_errors", "ungated_correct_bookings", "ungated_decision_ms",
     "error", "spoken_text", "transcript",
 ]
@@ -456,6 +472,9 @@ def write_csv(rows: Sequence[EvalRow], path: Path) -> None:
                     gated_silent_errors=s.gated.silent_errors,
                     gated_correct_bookings=s.gated.correct_bookings,
                     gated_decision_ms=s.gated.decision_ms,
+                    gated_normalize_ms=s.gated.normalize_ms,
+                    gated_match_ms=s.gated.match_ms,
+                    gated_decide_ms=s.gated.decide_ms,
                     ungated_booked=s.ungated.booked,
                     ungated_silent_errors=s.ungated.silent_errors,
                     ungated_correct_bookings=s.ungated.correct_bookings,
@@ -463,6 +482,17 @@ def write_csv(rows: Sequence[EvalRow], path: Path) -> None:
                 )
                 for f in ENTITY_FIELDS:
                     rec[f"{f}_correct"] = s.entity_correct[f]
+            c = r.outcome.stt_client
+            if c is not None:
+                rec.update(
+                    stt_attempts=c.attempts,
+                    stt_connect_ms=round(c.connect_ms, 1),
+                    stt_audio_send_ms=round(c.audio_send_ms, 1),
+                    stt_final_after_audio_ms=(
+                        "" if c.final_transcript_after_audio_ms is None else round(c.final_transcript_after_audio_ms, 1)
+                    ),
+                    stt_drain_ms=round(c.drain_ms, 1),
+                )
             writer.writerow(rec)
 
 
@@ -555,6 +585,34 @@ def _pct(x: float) -> str:
     return f"{100.0 * x:.1f}%"
 
 
+def stage_latency_lines(rows: Sequence[EvalRow]) -> List[str]:
+    """Markdown table of P50/P95 per pipeline stage over every scored item."""
+    scored = [r for r in rows if r.score is not None]
+    clients = [r.outcome.stt_client for r in scored if r.outcome.stt_client is not None]
+    gated = [r.score.gated for r in scored if r.score is not None]
+    stages: List[Tuple[str, str, List[float], int]] = [
+        ("STT, Prisma-reported", "the `latency` field Prisma attaches to each transcript (mean per utterance)",
+         [r.outcome.stt_latency_ms for r in scored], 0),
+        ("STT, client-observed", "last audio frame sent → last final transcript received",
+         [v for v in (c.final_transcript_after_audio_ms for c in clients) if v is not None], 0),
+        ("STT connect", "WebSocket open + handshake frame", [c.connect_ms for c in clients], 0),
+        ("normalize", "numeral normalizer", [g.normalize_ms for g in gated], 3),
+        ("match", "clause split + buyer/SKU/unit/amount matching", [g.match_ms for g in gated], 3),
+        ("decide", "confidence gate + credit check + SQLite ledger write, every intent",
+         [g.decide_ms for g in gated], 3),
+    ]
+    lines = ["| Stage | measures | n | P50 ms | P95 ms |", "|---|---|---|---|---|"]
+    for name, what, values, decimals in stages:
+        if values:
+            lines.append(
+                f"| {name} | {what} | {len(values)} | {percentile(values, P50):.{decimals}f} "
+                f"| {percentile(values, P95):.{decimals}f} |"
+            )
+        else:
+            lines.append(f"| {name} | {what} | 0 | — | — |")
+    return lines
+
+
 def render_report(
     rows: Sequence[EvalRow],
     sweep: Sequence[Tuple[float, int, int, int, int]],
@@ -620,7 +678,9 @@ def render_report(
             "still block booking.",
             "- **Latency:** *STT* is the latency Prisma reports per segment (mean per utterance); "
             "*firewall* is the measured wall time of `evaluate_utterance` (normalizer + matcher + "
-            "decision + SQLite write). Timbre time-to-first-byte and barge-in flush are measured in Task 4.",
+            "decision + SQLite write). Per-stage spans come from `PipelineTelemetry` (see *Latency by "
+            "pipeline stage*). Timbre time-to-first-byte and barge-in stop time are live measurements in "
+            "the hand-maintained sections at the end.",
             "",
             "## Results",
             "",
@@ -634,6 +694,15 @@ def render_report(
             rule,
             *[line(c) for c in rollups],
             line(noisy_all),
+            "",
+            "## Latency by pipeline stage",
+            "",
+            "Every scored item, all conditions. *Client-observed* STT and *STT connect* exist only for "
+            "transcripts recorded after client-side STT timing was added (cached transcripts carry only the "
+            "Prisma-reported figure), so their n can be smaller. This benchmark synthesizes no replies, so "
+            "Timbre first byte is not a stage here.",
+            "",
+            *stage_latency_lines(rows),
             "",
             "## Does the confidence gate help?",
             "",

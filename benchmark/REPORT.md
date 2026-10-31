@@ -10,29 +10,42 @@ Generated 2026-10-31 by `benchmark/run_eval.py` — 45 utterances × conditions 
 - **WER:** `jiwer`. *Normalized* passes both sides through `normalize_hybrid_tamil_numerals` (the corpus spells numbers as words; Prisma emits digits, so *raw* WER is inflated by formatting). Means over utterances.
 - **Entity accuracy:** pooled over ground-truth trades; extracted intents are matched to trades by best field overlap.
 - **Silent Financial Error Rate (SFER):** booked trades (`BOOKED` / `BOOKED_AFTER_BARGE_IN`) that match no ground-truth trade, divided by ground-truth trades attempted. Omitted trades are not silent errors. Without the gate, structural checks (unresolved buyer/SKU/rate/qty) still block booking.
-- **Latency:** *STT* is the latency Prisma reports per segment (mean per utterance); *firewall* is the measured wall time of `evaluate_utterance` (normalizer + matcher + decision + SQLite write). Timbre time-to-first-byte and barge-in flush are measured in Task 4.
+- **Latency:** *STT* is the latency Prisma reports per segment (mean per utterance); *firewall* is the measured wall time of `evaluate_utterance` (normalizer + matcher + decision + SQLite write). Per-stage spans come from `PipelineTelemetry` (see *Latency by pipeline stage*). Timbre time-to-first-byte and barge-in stop time are live measurements in the hand-maintained sections at the end.
 
 ## Results
 
 | Condition | n | WER (norm.) | WER (raw) | buyer | SKU | qty | unit | rate | STT P50 / P95 ms | firewall P50 / P95 ms | SFER gate ON | SFER gate OFF |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| clean (no noise) | 45 | 10.2% | 25.9% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 266 / 8322 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| harbour @ 10 dB | 45 | 11.8% | 27.5% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 214 / 297 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| harbour @ 5 dB | 45 | 12.1% | 27.8% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 218 / 341 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| market @ 10 dB | 45 | 12.8% | 28.3% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 208 / 306 | 0.14 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
-| market @ 5 dB | 45 | 17.6% | 32.2% | 94.3% | 91.4% | 91.4% | 91.4% | 87.1% | 209 / 340 | 0.10 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
+| clean (no noise) | 45 | 10.2% | 25.9% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 266 / 8322 | 0.15 / 0.16 | 0.0% (0/70) | 0.0% (0/70) |
+| harbour @ 10 dB | 45 | 11.8% | 27.5% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 214 / 297 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| harbour @ 5 dB | 45 | 12.1% | 27.8% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 218 / 341 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| market @ 10 dB | 45 | 12.8% | 28.3% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 208 / 306 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| market @ 5 dB | 45 | 17.6% | 32.2% | 94.3% | 91.4% | 91.4% | 91.4% | 87.1% | 209 / 340 | 0.11 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
 | traffic @ 10 dB | 45 | 11.1% | 26.7% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 223 / 361 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| traffic @ 5 dB | 45 | 11.4% | 27.2% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 202 / 406 | 0.14 / 0.16 | 0.0% (0/70) | 0.0% (0/70) |
+| traffic @ 5 dB | 45 | 11.4% | 27.2% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 202 / 406 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
 | ice_crusher @ 10 dB | 45 | 12.3% | 27.6% | 100.0% | 95.7% | 95.7% | 95.7% | 95.7% | 204 / 305 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| ice_crusher @ 5 dB | 45 | 13.6% | 28.8% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 217 / 328 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| ice_crusher @ 5 dB | 45 | 13.6% | 28.8% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 217 / 328 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
 
 ### Roll-up by SNR (all four noise profiles)
 
 | Condition | n | WER (norm.) | WER (raw) | buyer | SKU | qty | unit | rate | STT P50 / P95 ms | firewall P50 / P95 ms | SFER gate ON | SFER gate OFF |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| all profiles @ 10 dB | 180 | 12.0% | 27.5% | 100.0% | 96.8% | 96.8% | 96.8% | 96.1% | 212 / 317 | 0.14 / 0.17 | 0.0% (0/280) | 0.0% (0/280) |
+| all profiles @ 10 dB | 180 | 12.0% | 27.5% | 100.0% | 96.8% | 96.8% | 96.8% | 96.1% | 212 / 317 | 0.15 / 0.17 | 0.0% (0/280) | 0.0% (0/280) |
 | all profiles @ 5 dB | 180 | 13.7% | 29.0% | 98.6% | 95.7% | 95.7% | 95.7% | 93.9% | 215 / 346 | 0.14 / 0.17 | 0.0% (0/280) | 0.0% (0/280) |
 | **all noisy cells** | 360 | 12.8% | 28.3% | 99.3% | 96.2% | 96.2% | 96.2% | 95.0% | 214 / 345 | 0.14 / 0.17 | 0.0% (0/560) | 0.0% (0/560) |
+
+## Latency by pipeline stage
+
+Every scored item, all conditions. *Client-observed* STT and *STT connect* exist only for transcripts recorded after client-side STT timing was added (cached transcripts carry only the Prisma-reported figure), so their n can be smaller. This benchmark synthesizes no replies, so Timbre first byte is not a stage here.
+
+| Stage | measures | n | P50 ms | P95 ms |
+|---|---|---|---|---|
+| STT, Prisma-reported | the `latency` field Prisma attaches to each transcript (mean per utterance) | 405 | 216 | 350 |
+| STT, client-observed | last audio frame sent → last final transcript received | 0 | — | — |
+| STT connect | WebSocket open + handshake frame | 0 | — | — |
+| normalize | numeral normalizer | 405 | 0.013 | 0.015 |
+| match | clause split + buyer/SKU/unit/amount matching | 405 | 0.043 | 0.063 |
+| decide | confidence gate + credit check + SQLite ledger write, every intent | 405 | 0.074 | 0.085 |
 
 ## Does the confidence gate help?
 

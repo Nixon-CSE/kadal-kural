@@ -16,6 +16,7 @@ from kadal_kural.domain.models import (
 from kadal_kural.domain.normalizer import format_inr_for_timbre_prosody
 from kadal_kural.domain.telemetry import (
     NullSpanRecorder,
+    SpanRecorder,
     SpanRecorderFactory,
     UtteranceEvaluation,
     recorded_span,
@@ -70,10 +71,17 @@ class PreDispatchCreditFirewallService:
         return list(self.evaluate_utterance_timed(raw_utterance, stt_latency_ms).decisions)
 
     def evaluate_utterance_timed(
-        self, raw_utterance: str, stt_latency_ms: float = 0.0
+        self,
+        raw_utterance: str,
+        stt_latency_ms: float = 0.0,
+        spans: Optional[SpanRecorder] = None,
     ) -> UtteranceEvaluation:
-        """Evaluates one utterance, timing normalize, match and decide (incl. the SQLite write)."""
-        spans = self._span_recorder_factory()
+        """
+        Evaluates one utterance, timing normalize, match and decide (incl. the SQLite write).
+        Pass ``spans`` to record onto a caller's timeline (e.g. one that already holds the
+        STT spans); otherwise a fresh recorder comes from the injected factory.
+        """
+        spans = self._span_recorder_factory() if spans is None else spans
         tokens = set(raw_utterance.lower().split())
         has_digits = any(char.isdigit() for char in raw_utterance)
 

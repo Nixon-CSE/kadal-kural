@@ -15,14 +15,15 @@ import json
 import logging
 import struct
 import time
-from dataclasses import dataclass
-from typing import Awaitable, Callable, Dict, List, Optional, Set, TypeVar
+from dataclasses import dataclass, replace
+from typing import Awaitable, Callable, Dict, List, Optional, Set, Tuple, TypeVar
 
 import websockets
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import InvalidStatus, WebSocketException
 
 from kadal_kural.config import (
+    NS_PER_MS,
     PCM_FRAME_BYTES,
     PCM_SAMPLE_WIDTH_BYTES,
     SUPPORTED_PCM_SAMPLE_RATES,
@@ -60,6 +61,42 @@ class SynthesisTelemetry:
     was_interrupted: bool
 
 
+@dataclass(frozen=True)
+class PrismaEventTiming:
+    """One Prisma event as the client saw it, timed against the last audio frame sent."""
+
+    event_type: str
+    utterance_id: str
+    received_after_audio_end_ms: float  # negative while audio was still being sent
+    reported_latency_ms: Optional[float]  # Prisma's own 'latency' field (transcripts only)
+    is_final: Optional[bool]
+
+
+@dataclass(frozen=True)
+class PrismaStreamTelemetry:
+    """Client-side timing of one Prisma v2.5 stream (the final, successful attempt)."""
+
+    attempts: int
+    connect_ms: float  # WebSocket open + handshake frame
+    audio_send_ms: float  # first audio frame -> last audio frame sent (real-time paced)
+    drain_ms: float  # last audio frame sent -> every started utterance transcribed (+ grace)
+    events: Tuple[PrismaEventTiming, ...]
+
+    @property
+    def final_transcript_after_audio_ms(self) -> Optional[float]:
+        """When the last final transcript arrived, measured from the last audio frame sent."""
+        finals = [
+            e.received_after_audio_end_ms
+            for e in self.events
+            if e.event_type == "transcript" and e.is_final is not False
+        ]
+        return max(finals) if finals else None
+
+
+def _elapsed_ms(start_ns: int, end_ns: int) -> float:
+    return (end_ns - start_ns) / NS_PER_MS
+
+
 class PCM1024RingBufferPacer:
     """
     Accumulates arbitrary-length raw PCM bytes from browser WebRTC/AudioWorklet or
@@ -87,6 +124,20 @@ class PCM1024RingBufferPacer:
         return padded
 
 
+@dataclass(frozen=True)
+class AssembledUtterance:
+    """The VAD segments stitched into one utterance, with when the first and last arrived."""
+
+    text: str
+    segment_latencies_ms: Tuple[float, ...]  # Prisma-reported, one per segment
+    first_segment_ns: int  # time.perf_counter_ns() when the first segment was received
+    last_segment_ns: int
+
+    @property
+    def mean_stt_latency_ms(self) -> float:
+        return round(sum(self.segment_latencies_ms) / max(1, len(self.segment_latencies_ms)), 1)
+
+
 class MultiSegmentTradeAssembler:
     """
     Stitches consecutive VAD speech segments across a sliding window (default 1.5s)
@@ -96,21 +147,27 @@ class MultiSegmentTradeAssembler:
     def __init__(
         self,
         window_sec: float,
-        on_commit: Callable[[str, float], Awaitable[None]],
+        on_commit: Callable[[AssembledUtterance], Awaitable[None]],
+        clock: Callable[[], int] = time.perf_counter_ns,
     ) -> None:
         self._window_sec = window_sec
         self._on_commit = on_commit
+        self._clock = clock
         self._segments: List[str] = []
         self._latencies_ms: List[float] = []
+        self._received_ns: List[int] = []
         self._flush_task: Optional[asyncio.Task[None]] = None
 
-    async def ingest_segment(self, transcript: str, stt_latency_ms: float) -> None:
-        """Buffers a VAD segment and (re)starts the stitching window."""
+    async def ingest_segment(
+        self, transcript: str, stt_latency_ms: float, received_ns: Optional[int] = None
+    ) -> None:
+        """Buffers a VAD segment (received at ``received_ns``, default now) and restarts the window."""
         cleaned = transcript.strip()
         if not cleaned:
             return
         self._segments.append(cleaned)
         self._latencies_ms.append(stt_latency_ms)
+        self._received_ns.append(self._clock() if received_ns is None else received_ns)
         if self._flush_task is not None and not self._flush_task.done():
             self._flush_task.cancel()
         self._flush_task = asyncio.create_task(self._wait_and_flush())
@@ -131,11 +188,16 @@ class MultiSegmentTradeAssembler:
     async def _commit_buffer(self) -> None:
         if not self._segments:
             return
-        merged_utterance = " ".join(self._segments)
-        mean_latency_ms = sum(self._latencies_ms) / max(1, len(self._latencies_ms))
+        utterance = AssembledUtterance(
+            text=" ".join(self._segments),
+            segment_latencies_ms=tuple(self._latencies_ms),
+            first_segment_ns=self._received_ns[0],
+            last_segment_ns=self._received_ns[-1],
+        )
         self._segments.clear()
         self._latencies_ms.clear()
-        await self._on_commit(merged_utterance, round(mean_latency_ms, 1))
+        self._received_ns.clear()
+        await self._on_commit(utterance)
 
 
 def finalize_streamed_wav(audio: bytes) -> bytes:
@@ -299,11 +361,13 @@ class GnaniArthaSpeechClient:
         text_tamil: str,
         *,
         sample_rate: int = 16000,
+        on_first_audio: Optional[Callable[[], None]] = None,
     ) -> SynthesisTelemetry:
         """
         Streams Tamil voice synthesis from Gnani Timbre v2.5 over WebSocket.
         Measures exact Time-To-First-Byte (TTFB) and supports mid-stream barge-in cancellation.
         Audio chunks are reassembled by ``chunk_index`` and the streamed WAV header is repaired.
+        ``on_first_audio`` is called once, as soon as the first audio chunk arrives.
         Raises ``GnaniProtocolError`` (a ``RuntimeError``) on an ``error`` frame.
         """
         api_key = self._require_api_key()
@@ -356,6 +420,8 @@ class GnaniArthaSpeechClient:
                     if audio_b64:
                         if ttfb_ms == 0.0:
                             ttfb_ms = round((time.perf_counter() - t_start) * 1000.0, 1)
+                            if on_first_audio is not None:
+                                on_first_audio()
                         received_audio = True
                         raw_index = data.get("chunk_index")
                         index = raw_index if isinstance(raw_index, int) else len(chunks) + 1
@@ -385,7 +451,7 @@ class GnaniArthaSpeechClient:
         lang_code: str = "ta-IN",
         enable_boosting: bool = True,
         append_trailing_silence: bool = True,
-    ) -> None:
+    ) -> PrismaStreamTelemetry:
         """
         Streams raw 16-bit mono PCM audio in strict 1,024-byte frames to Gnani Prisma v2.5,
         paced in real time (64ms @ 8kHz, 32ms @ 16kHz) to preserve server-side VAD accuracy.
@@ -395,6 +461,9 @@ class GnaniArthaSpeechClient:
         work). Afterwards the call waits, bounded by the read timeout, for every utterance
         that began to produce its transcript. Pass ``append_trailing_silence=False`` when the
         caller supplies its own tail (e.g. noise-only audio) so the VAD sees it instead.
+
+        Returns the client-side timing of the successful attempt (connect, audio send, drain,
+        and when each Prisma event arrived relative to the last audio frame sent).
         """
         api_key = self._require_api_key()
         if sample_rate not in SUPPORTED_PCM_SAMPLE_RATES:
@@ -403,14 +472,17 @@ class GnaniArthaSpeechClient:
                 f"{SUPPORTED_PCM_SAMPLE_RATES} only"
             )
         delivered = False
+        attempts = 0
 
         async def _tracked_on_segment(text: str, latency_ms: float) -> None:
             nonlocal delivered
             delivered = True
             await on_segment(text, latency_ms)
 
-        async def _attempt() -> None:
-            await self._prisma_attempt(
+        async def _attempt() -> PrismaStreamTelemetry:
+            nonlocal attempts
+            attempts += 1
+            return await self._prisma_attempt(
                 api_key,
                 pcm_bytes,
                 _tracked_on_segment,
@@ -420,7 +492,8 @@ class GnaniArthaSpeechClient:
                 append_trailing_silence=append_trailing_silence,
             )
 
-        await self._with_retry("Prisma v2.5 STT", _attempt, lambda: delivered)
+        telemetry = await self._with_retry("Prisma v2.5 STT", _attempt, lambda: delivered)
+        return replace(telemetry, attempts=attempts)
 
     async def _prisma_attempt(
         self,
@@ -432,7 +505,7 @@ class GnaniArthaSpeechClient:
         lang_code: str,
         enable_boosting: bool,
         append_trailing_silence: bool,
-    ) -> None:
+    ) -> PrismaStreamTelemetry:
         cfg = self._settings
         pace_sec = frame_pace_seconds(sample_rate)
         pacer = PCM1024RingBufferPacer()
@@ -453,6 +526,9 @@ class GnaniArthaSpeechClient:
             else b""
         )
         open_utterances: Set[str] = set()
+        # (received ns, type, utterance id, reported latency ms, is_final) per Prisma event
+        event_log: List[Tuple[int, str, str, Optional[float], Optional[bool]]] = []
+        connect_start_ns = time.perf_counter_ns()
 
         async with websockets.connect(
             cfg.prisma_ws_url,
@@ -461,6 +537,7 @@ class GnaniArthaSpeechClient:
             open_timeout=cfg.gnani_open_timeout_sec,
         ) as ws:
             handshake = await self._recv_json(ws)
+            connected_ns = time.perf_counter_ns()
             handshake_cfg = handshake.get("config")
             handshake_cfg = handshake_cfg if isinstance(handshake_cfg, dict) else {}
             logger.info(
@@ -477,21 +554,26 @@ class GnaniArthaSpeechClient:
                 while True:
                     # Silence is legitimate while audio is still being sent, so this read is
                     # unbounded; the post-send drain below is what is bounded by the timeout.
-                    event = self._parse_frame(await ws.recv())
+                    raw = await ws.recv()
+                    received_ns = time.perf_counter_ns()
+                    event = self._parse_frame(raw)
                     event_type = event.get("type")
                     utterance_id = str(event.get("utterance_id", ""))
                     if event_type == "speech_start":
                         open_utterances.add(utterance_id)
+                        event_log.append((received_ns, "speech_start", utterance_id, None, None))
                     elif event_type == "transcript":
                         logger.debug("Prisma raw transcript event: %s", event)
-                        if event.get("is_final", True):
+                        is_final = bool(event.get("is_final", True))
+                        if is_final:
                             open_utterances.discard(utterance_id)
+                        reported_ms = float(str(event.get("latency", 0.0)))
+                        event_log.append((received_ns, "transcript", utterance_id, reported_ms, is_final))
                         # Signal barge-in abort as soon as new user speech arrives
                         self.trigger_barge_in_abort()
-                        await on_segment(
-                            str(event.get("text", "")),
-                            float(str(event.get("latency", 0.0))),
-                        )
+                        await on_segment(str(event.get("text", "")), reported_ms)
+                    else:
+                        event_log.append((received_ns, str(event_type), utterance_id, None, None))
 
             receiver_task = asyncio.create_task(_receive_events())
             try:
@@ -500,16 +582,36 @@ class GnaniArthaSpeechClient:
                 if tail is not None:
                     frames.append(tail)
 
+                audio_start_ns = last_sent_ns = time.perf_counter_ns()
                 for frame in frames:
                     if receiver_task.done():
                         receiver_task.result()  # surfaces error frames / closed sockets
                     await ws.send(frame)
+                    last_sent_ns = time.perf_counter_ns()
                     await asyncio.sleep(pace_sec)
 
                 await self._drain_open_utterances(receiver_task, open_utterances)
+                drained_ns = time.perf_counter_ns()
             finally:
                 receiver_task.cancel()
                 await asyncio.gather(receiver_task, return_exceptions=True)
+
+        return PrismaStreamTelemetry(
+            attempts=1,
+            connect_ms=_elapsed_ms(connect_start_ns, connected_ns),
+            audio_send_ms=_elapsed_ms(audio_start_ns, last_sent_ns),
+            drain_ms=_elapsed_ms(last_sent_ns, drained_ns),
+            events=tuple(
+                PrismaEventTiming(
+                    event_type=kind,
+                    utterance_id=uid,
+                    received_after_audio_end_ms=_elapsed_ms(last_sent_ns, received_ns),
+                    reported_latency_ms=reported_ms,
+                    is_final=is_final,
+                )
+                for received_ns, kind, uid, reported_ms, is_final in event_log
+            ),
+        )
 
     async def _drain_open_utterances(
         self,

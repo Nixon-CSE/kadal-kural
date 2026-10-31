@@ -13,9 +13,10 @@ import base64
 import io
 import json
 import logging
+import time
 import wave
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Dict, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -23,18 +24,54 @@ from pydantic import BaseModel, Field
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-from kadal_kural.config import LIVE_MIC_SAMPLE_RATE, WS_PING_INTERVAL_SEC, AppSettings
+from kadal_kural.config import (
+    LIVE_MIC_SAMPLE_RATE,
+    TIMING_LOGGER_NAME,
+    TIMING_PATH_INGEST,
+    TIMING_PATH_LIVE_WS,
+    TIMING_PATH_UPLOAD_WAV,
+    WS_PING_INTERVAL_SEC,
+    AppSettings,
+)
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.infrastructure.gnani_client import (
+    AssembledUtterance,
     GnaniArthaSpeechClient,
     GnaniConfigurationError,
     MultiSegmentTradeAssembler,
     PCM1024RingBufferPacer,
 )
 from kadal_kural.infrastructure.persistence import AppendOnlyLedgerRepository
+from kadal_kural.infrastructure.voice_turn import VoiceTurn, run_voice_turn
 
 logger = logging.getLogger(__name__)
+
+
+def _enable_timing_log() -> None:
+    """
+    Makes the per-utterance JSON timing lines reach a log. Under uvicorn the root logger has
+    no handlers, so INFO records would be dropped; in that case the timing logger gets its own
+    stderr handler that writes each record's message (one JSON object) as one line.
+    """
+    timing = logging.getLogger(TIMING_LOGGER_NAME)
+    timing.setLevel(logging.INFO)
+    if not timing.handlers and not logging.getLogger().handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        timing.addHandler(handler)
+
+
+def _decision_items(turn: VoiceTurn) -> List[Dict[str, Any]]:
+    """Serializes each decision with its spoken reply (TTFB and WAV) when one was synthesized."""
+    items: List[Dict[str, Any]] = []
+    for decision, reply in zip(turn.evaluation.decisions, turn.replies):
+        item = decision.model_dump()
+        if reply is not None:
+            item["timbre_ttfb_ms"] = reply.ttfb_ms
+            item["audio_wav_b64"] = base64.b64encode(reply.audio_wav_bytes).decode("ascii")
+        items.append(item)
+    return items
 
 
 class UtteranceIngestRequest(BaseModel):
@@ -45,6 +82,7 @@ class UtteranceIngestRequest(BaseModel):
 
 def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
     cfg = settings or AppSettings()
+    _enable_timing_log()
     matcher = BilingualCatalogMatcher(cfg.catalog_path, cfg.assumed_unit_confidence)
     repo = AppendOnlyLedgerRepository(cfg.db_path, list(matcher.buyers.values()))
     firewall = PreDispatchCreditFirewallService(cfg, matcher, repo)
@@ -84,20 +122,17 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
 
     @app.post("/api/v1/ingest")
     async def ingest_utterance(payload: UtteranceIngestRequest) -> Dict[str, Any]:
-        decisions = firewall.evaluate_utterance(
-            payload.transcript, stt_latency_ms=payload.stt_latency_ms
-        )
-        serialized = []
         has_key = bool(cfg.gnani_api_key and cfg.gnani_api_key != "your_gnani_api_key_here")
-        for dec in decisions:
-            item = dec.model_dump()
-            if payload.synthesize_tts and has_key:
-                telemetry = await speech_client.synthesize_timbre_v25(dec.tts_response_tamil)
-                item["timbre_ttfb_ms"] = telemetry.ttfb_ms
-                item["audio_wav_b64"] = base64.b64encode(telemetry.audio_wav_bytes).decode("ascii")
-            serialized.append(item)
+        turn = await run_voice_turn(
+            firewall,
+            speech_client,
+            payload.transcript,
+            path=TIMING_PATH_INGEST,
+            decision_stt_latency_ms=payload.stt_latency_ms,
+            synthesize=payload.synthesize_tts and has_key,
+        )
         return {
-            "decisions": serialized,
+            "decisions": _decision_items(turn),
             "snapshot": repo.fetch_dashboard_snapshot(),
         }
 
@@ -126,9 +161,11 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
 
         segments: list[str] = []
         latencies: list[float] = []
+        received_ns: list[int] = []
 
         async def _collect_segment(text: str, lat_ms: float) -> None:
             if text.strip():
+                received_ns.append(time.perf_counter_ns())
                 segments.append(text.strip())
                 latencies.append(lat_ms)
 
@@ -152,19 +189,19 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                 "snapshot": repo.fetch_dashboard_snapshot(),
             }
 
-        decisions = firewall.evaluate_utterance(merged_transcript, stt_latency_ms=mean_lat)
-        serialized = []
-        for dec in decisions:
-            item = dec.model_dump()
-            telemetry = await speech_client.synthesize_timbre_v25(dec.tts_response_tamil)
-            item["timbre_ttfb_ms"] = telemetry.ttfb_ms
-            item["audio_wav_b64"] = base64.b64encode(telemetry.audio_wav_bytes).decode("ascii")
-            serialized.append(item)
+        turn = await run_voice_turn(
+            firewall,
+            speech_client,
+            merged_transcript,
+            path=TIMING_PATH_UPLOAD_WAV,
+            stt_latencies_ms=latencies,
+            first_segment_ns=received_ns[0],
+        )
 
         return {
             "merged_transcript": merged_transcript,
             "stt_latency_ms": mean_lat,
-            "decisions": serialized,
+            "decisions": _decision_items(turn),
             "snapshot": repo.fetch_dashboard_snapshot(),
         }
 
@@ -198,22 +235,21 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             "x-enable-substitution": "true",
         }
 
-        async def _on_assembled_utterance(merged_text: str, mean_stt_ms: float) -> None:
-            decisions = firewall.evaluate_utterance(merged_text, stt_latency_ms=mean_stt_ms)
-            out_decisions = []
-            for dec in decisions:
-                item = dec.model_dump()
-                telemetry = await speech_client.synthesize_timbre_v25(dec.tts_response_tamil)
-                item["timbre_ttfb_ms"] = telemetry.ttfb_ms
-                item["audio_wav_b64"] = base64.b64encode(telemetry.audio_wav_bytes).decode("ascii")
-                out_decisions.append(item)
-
+        async def _on_assembled_utterance(utterance: AssembledUtterance) -> None:
+            turn = await run_voice_turn(
+                firewall,
+                speech_client,
+                utterance.text,
+                path=TIMING_PATH_LIVE_WS,
+                stt_latencies_ms=utterance.segment_latencies_ms,
+                first_segment_ns=utterance.first_segment_ns,
+            )
             await client_ws.send_json(
                 {
                     "type": "credit_decisions",
-                    "assembled_transcript": merged_text,
-                    "stt_latency_ms": mean_stt_ms,
-                    "decisions": out_decisions,
+                    "assembled_transcript": utterance.text,
+                    "stt_latency_ms": utterance.mean_stt_latency_ms,
+                    "decisions": _decision_items(turn),
                     "snapshot": repo.fetch_dashboard_snapshot(),
                 }
             )
@@ -241,6 +277,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                 async def _prisma_to_client() -> None:
                     try:
                         async for raw_msg in prisma_ws:
+                            received_ns = time.perf_counter_ns()
                             evt = json.loads(raw_msg)
                             if evt.get("type") == "transcript":
                                 seg_text = str(evt.get("text", "")).strip()
@@ -255,7 +292,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                                             "stt_latency_ms": seg_lat,
                                         }
                                     )
-                                    await assembler.ingest_segment(seg_text, seg_lat)
+                                    await assembler.ingest_segment(seg_text, seg_lat, received_ns)
                     except ConnectionClosed:
                         return
 

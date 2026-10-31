@@ -30,12 +30,13 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import jiwer
 
-from kadal_kural.config import AppSettings
+from kadal_kural.config import SPAN_DECIDE, SPAN_MATCH, SPAN_NORMALIZE, AppSettings
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.models import CreditGateDecision, LedgerEventStatus, TradeIntent
 from kadal_kural.domain.normalizer import normalize_hybrid_tamil_numerals
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.infrastructure.persistence import AppendOnlyLedgerRepository
+from kadal_kural.infrastructure.timing import PerfCounterSpanRecorder
 
 from benchmark.corpus import BenchmarkUtterance, GroundTruthTrade
 
@@ -52,7 +53,10 @@ class GateOutcome:
     booked: int
     silent_errors: int
     correct_bookings: int
-    decision_ms: float
+    decision_ms: float  # wall time of the whole evaluate call
+    normalize_ms: float = 0.0  # PipelineTelemetry stages (0.0 when the stage did not run)
+    match_ms: float = 0.0
+    decide_ms: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -149,7 +153,9 @@ class FreshLedgerFirewall:
 
     def __init__(self, settings: AppSettings, matcher: BilingualCatalogMatcher, db_path: Path) -> None:
         self.repo = AppendOnlyLedgerRepository(str(db_path), list(matcher.buyers.values()))
-        self.service = PreDispatchCreditFirewallService(settings, matcher, self.repo)
+        self.service = PreDispatchCreditFirewallService(
+            settings, matcher, self.repo, span_recorder_factory=PerfCounterSpanRecorder
+        )
 
     def evaluate(
         self, transcript: str, truths: Sequence[GroundTruthTrade], stt_latency_ms: float
@@ -158,10 +164,19 @@ class FreshLedgerFirewall:
         self.repo.reset_to_seed_state()
         self.service.held_context = None
         t0 = time.perf_counter()
-        decisions = self.service.evaluate_utterance(transcript, stt_latency_ms=stt_latency_ms)
+        evaluation = self.service.evaluate_utterance_timed(transcript, stt_latency_ms=stt_latency_ms)
         decision_ms = (time.perf_counter() - t0) * MS_PER_SECOND
-        booked, errors, correct = classify_bookings(decisions, truths)
-        return GateOutcome(booked, errors, correct, round(decision_ms, 3))
+        booked, errors, correct = classify_bookings(list(evaluation.decisions), truths)
+        stages = evaluation.telemetry.durations_ms()
+        return GateOutcome(
+            booked,
+            errors,
+            correct,
+            round(decision_ms, 3),
+            normalize_ms=round(stages.get(SPAN_NORMALIZE, 0.0), 4),
+            match_ms=round(stages.get(SPAN_MATCH, 0.0), 4),
+            decide_ms=round(stages.get(SPAN_DECIDE, 0.0), 4),
+        )
 
 
 class Scorer:

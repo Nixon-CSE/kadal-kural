@@ -51,6 +51,22 @@ SPAN_DECIDE: str = "decide"
 SPAN_UNDO: str = "undo"  # voice-undo lookup and compensating write (no normalize/match)
 NS_PER_MS: int = 1_000_000
 
+# Full live-path spans, on one timeline per utterance whose origin is the first STT segment
+# received (or the request received, for the transcript-only /api/v1/ingest path).
+SPAN_ASSEMBLE: str = "assemble"  # first STT segment received -> firewall evaluation starts
+SPAN_TIMBRE_FIRST_BYTE: str = "timbre_first_byte"  # first reply's Timbre request -> first audio byte
+
+# One structured JSON line per utterance is logged at INFO on this logger.
+TIMING_LOGGER_NAME: str = "kadal_kural.timing"
+UTTERANCE_TIMING_EVENT: str = "utterance_timing"
+TIMING_ORIGIN_FIRST_SEGMENT: str = "first_stt_segment_received"
+TIMING_ORIGIN_REQUEST: str = "request_received"
+TIMING_PATH_LIVE_WS: str = "live_ws"
+TIMING_PATH_UPLOAD_WAV: str = "upload_wav"
+TIMING_PATH_INGEST: str = "ingest"
+TIMING_PATH_PIPECAT: str = "pipecat"
+TIMING_LOG_DECIMALS: int = 3  # milliseconds to the microsecond
+
 
 def frame_pace_seconds(sample_rate: int) -> float:
     """Real-time duration of one 1,024-byte PCM frame at ``sample_rate`` (64ms @ 8kHz, 32ms @ 16kHz)."""
