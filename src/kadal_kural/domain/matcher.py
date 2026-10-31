@@ -117,6 +117,10 @@ class BilingualCatalogMatcher:
         sku = self.skus[self._sku_alias_index[matched_alias]]
         return sku, round(float(score) / 100.0, 3)
 
+    def normalize(self, raw_utterance: str) -> str:
+        """The normalize stage: resolves Prisma's hybrid Tamil-word/digit numerals."""
+        return normalize_hybrid_tamil_numerals(raw_utterance)
+
     def parse_utterance(
         self,
         raw_utterance: str,
@@ -126,7 +130,15 @@ class BilingualCatalogMatcher:
         Extracts 1..N structured TradeIntent objects from a single spoken utterance.
         Supports contextual barge-in quantity overrides (e.g., 'செந்திலுக்கு 25 பாக்ஸ் மட்டும் போடு').
         """
-        normalized_full = normalize_hybrid_tamil_numerals(raw_utterance)
+        return self.parse_normalized(self.normalize(raw_utterance), raw_utterance, held_context)
+
+    def parse_normalized(
+        self,
+        normalized_full: str,
+        raw_utterance: str,
+        held_context: Optional[HeldTradeContext] = None,
+    ) -> List[TradeIntent]:
+        """The match stage: parse_utterance on text that normalize() already resolved."""
         clauses = split_multi_trade_clauses(normalized_full)
         intents: List[TradeIntent] = []
 

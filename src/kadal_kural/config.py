@@ -43,6 +43,14 @@ UNPRICED_UNIT_RATE_CONFIDENCE: float = 0.4
 # Such a trade already fails the gate on SKU confidence; this only fills TradeIntent.unit.
 NO_SKU_FALLBACK_UNIT: str = "box"
 
+# Span names PreDispatchCreditFirewallService records into PipelineTelemetry per utterance.
+# 'decide' covers every intent's gate and credit check, including the SQLite ledger write.
+SPAN_NORMALIZE: str = "normalize"
+SPAN_MATCH: str = "match"
+SPAN_DECIDE: str = "decide"
+SPAN_UNDO: str = "undo"  # voice-undo lookup and compensating write (no normalize/match)
+NS_PER_MS: int = 1_000_000
+
 
 def frame_pace_seconds(sample_rate: int) -> float:
     """Real-time duration of one 1,024-byte PCM frame at ``sample_rate`` (64ms @ 8kHz, 32ms @ 16kHz)."""
