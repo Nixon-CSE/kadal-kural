@@ -104,7 +104,7 @@ def _no_real_pacing(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _patch_connect(monkeypatch: pytest.MonkeyPatch, script: List[Union[FakeWS, BaseException]]) -> FakeConnect:
     fake = FakeConnect(script)
-    monkeypatch.setattr(gnani_client.websockets, "connect", fake)
+    monkeypatch.setattr("kadal_kural.infrastructure.gnani_client.websockets.connect", fake)
     return fake
 
 

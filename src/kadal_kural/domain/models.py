@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class LedgerEventStatus(str, Enum):
@@ -31,6 +31,39 @@ class BuyerProfile(BaseModel):
     aliases: List[str]
 
 
+class ValueRange(BaseModel):
+    """
+    Inclusive [min, max] sanity band for a spoken amount (catalog.json rate_range_inr per
+    SKU and unit_quantity_ranges per unit).
+
+    The catalog bands were set from how Kasimedu wholesale trade works, decided before
+    looking at any benchmark results, and are deliberately wide: they exist to catch gross
+    misparses (a dropped hundreds word, a misheard quantity), not to police prices.
+      - Export Vanjaram ₹400–1,600 per kg (catalog default_unit 'kg'). Kasimedu quotes seer
+        fish per kg, never per box: DT Next reported Rs 950/kg on 26 Oct 2026 ("Kasimedu fish
+        prices rise amid low supply; seer fish sells at Rs 950 per kg"), Rs 1,200–1,400/kg the
+        Sunday after the 2026 fishing ban, down from Rs 2,300/kg the week before ("Chennai: Fish
+        prices dip by Rs 100–Rs 300 as supply returns to normal", 28 Jun 2026), and whole fish
+        bought by weight at roughly Rs 500–600/kg ("Fisheye view of Kasimedu", 2016). A
+        ban-end spike above ₹1,600 is deliberately left to score below the gate and be held.
+      - Tiger Prawn ₹300–1,500/kg: the same 26 Oct 2026 DT Next price list gives rock/tiger
+        prawns at Rs 1,200/kg; smaller counts sell lower.
+      - Quantity per trade: kg 1–1,000 (a tonne is an exporter-sized lot); box 1–200, set
+        1–100 and pcs 1–500 are unsourced generous caps for the mandi's non-fish lines.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    min: int = Field(gt=0)
+    max: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _check_bounds_ordered(self) -> "ValueRange":
+        if self.min > self.max:
+            raise ValueError(f"range min {self.min} exceeds max {self.max}")
+        return self
+
+
 class SKUProfile(BaseModel):
     """Registered B2B wholesale commodity or spare-part SKU."""
 
@@ -40,6 +73,7 @@ class SKUProfile(BaseModel):
     canonical_name: str
     tamil_speak_name: str
     default_unit: str
+    rate_range_inr: ValueRange
     aliases: List[str]
 
 

@@ -77,3 +77,34 @@ def test_corpus_ground_truth_matches_clean_text_parse() -> None:
                 failures.append(f"{utterance.utterance_id}[{i}]: {'; '.join(mismatches)}")
 
     assert not failures, "corpus ground-truth mismatches on clean text:\n" + "\n".join(failures)
+
+
+def test_every_corpus_amount_is_inside_its_catalog_band() -> None:
+    """
+    The corpus models plausible trades, so every ground-truth rate must sit inside its SKU's
+    business-set catalog rate_range_inr and every quantity inside its unit's band. An
+    out-of-band amount would make the amount-sanity score, not noise, fail the clean trade.
+    """
+    matcher = BilingualCatalogMatcher(AppSettings().catalog_path)
+    sku_by_name = {s.canonical_name: s for s in matcher.skus.values()}
+    outside = []
+    for utterance in build_corpus():
+        for i, truth in enumerate(utterance.ground_truth_trades):
+            rate_band = sku_by_name[truth.sku_canonical_name].rate_range_inr
+            qty_band = matcher.unit_quantity_ranges[truth.unit]
+            if not rate_band.min <= truth.rate_inr <= rate_band.max:
+                outside.append(f"{utterance.utterance_id}[{i}]: rate {truth.rate_inr} outside {rate_band}")
+            if not qty_band.min <= truth.quantity <= qty_band.max:
+                outside.append(f"{utterance.utterance_id}[{i}]: qty {truth.quantity} outside {qty_band}")
+    assert not outside, "\n".join(outside)
+
+
+def test_corpus_rates_cover_every_numeral_style() -> None:
+    """Digit, pure-word, additive-hybrid and Tanglish rate spellings must all stay exercised."""
+    from benchmark.corpus import _RATE_DIGIT, _RATE_HYBRID, _RATE_WORD
+
+    texts = [u.spoken_text for u in build_corpus()]
+    for style, spellings in (("digit", _RATE_DIGIT), ("word", _RATE_WORD), ("hybrid", _RATE_HYBRID)):
+        used = {r for r, spelling in spellings.items() if any(f" {spelling} ரேட்டு" in t for t in texts)}
+        assert used, f"no {style} rate spelling is used by the corpus"
+    assert any(u.category == "tanglish" for u in build_corpus())

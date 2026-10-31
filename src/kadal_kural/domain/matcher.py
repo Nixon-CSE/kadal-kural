@@ -7,8 +7,19 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 from rapidfuzz import fuzz, process
 
-from kadal_kural.config import DEFAULT_ASSUMED_UNIT_CONFIDENCE
-from kadal_kural.domain.models import BuyerProfile, HeldTradeContext, SKUProfile, TradeIntent
+from kadal_kural.config import (
+    AMOUNT_CONFIDENCE_FLOOR,
+    AMOUNT_IN_RANGE_CONFIDENCE,
+    AMOUNT_OUT_OF_RANGE_SLOPE,
+    DEFAULT_ASSUMED_UNIT_CONFIDENCE,
+)
+from kadal_kural.domain.models import (
+    BuyerProfile,
+    HeldTradeContext,
+    SKUProfile,
+    TradeIntent,
+    ValueRange,
+)
 from kadal_kural.domain.normalizer import (
     BARGE_IN_OVERRIDE_MARKERS,
     CANONICAL_UNIT_MAP,
@@ -18,6 +29,21 @@ from kadal_kural.domain.normalizer import (
     strip_numeral_decoration,
     strip_tamil_dative_suffix,
 )
+
+
+def range_confidence(value: int, band: ValueRange) -> float:
+    """
+    Scores a spoken amount against its sanity band: 1.0 inside [min, max] (inclusive),
+    then falling linearly with the relative distance past the nearer bound, down to
+    AMOUNT_CONFIDENCE_FLOOR. Non-positive values score the floor.
+    """
+    if band.min <= value <= band.max:
+        return AMOUNT_IN_RANGE_CONFIDENCE
+    if value <= 0:
+        return AMOUNT_CONFIDENCE_FLOOR
+    excess = value / band.max - 1.0 if value > band.max else band.min / value - 1.0
+    score = AMOUNT_IN_RANGE_CONFIDENCE - AMOUNT_OUT_OF_RANGE_SLOPE * excess
+    return round(max(AMOUNT_CONFIDENCE_FLOOR, score), 3)
 
 
 class BilingualCatalogMatcher:
@@ -39,6 +65,13 @@ class BilingualCatalogMatcher:
         self.skus: Dict[str, SKUProfile] = {
             item["sku_id"]: SKUProfile(**item) for item in raw_data["skus"]
         }
+        self.unit_quantity_ranges: Dict[str, ValueRange] = {
+            unit: ValueRange(**band) for unit, band in raw_data["unit_quantity_ranges"].items()
+        }
+        required_units = set(CANONICAL_UNIT_MAP.values()) | {s.default_unit for s in self.skus.values()}
+        missing_units = required_units - set(self.unit_quantity_ranges)
+        if missing_units:
+            raise ValueError(f"catalog unit_quantity_ranges missing units: {sorted(missing_units)}")
 
         self._buyer_alias_index: Dict[str, str] = {}
         for buyer in self.buyers.values():
@@ -159,8 +192,14 @@ class BilingualCatalogMatcher:
                 unit, unit_conf = "box", self.assumed_unit_confidence
 
             total_val = (quantity or 0) * (rate_inr or 0)
-            rate_conf = 1.0 if rate_inr is not None and rate_inr > 0 else 0.0
-            overall_conf = round(min(buyer_conf, sku_conf, unit_conf, rate_conf), 3)
+            qty_conf = range_confidence(quantity, self.unit_quantity_ranges[unit])
+            if rate_inr is None or rate_inr <= 0:
+                rate_conf = 0.0
+            elif sku is None:
+                rate_conf = 1.0  # no SKU, no band to check against; sku_conf already gates it
+            else:
+                rate_conf = range_confidence(rate_inr, sku.rate_range_inr)
+            overall_conf = round(min(buyer_conf, sku_conf, unit_conf, qty_conf, rate_conf), 3)
 
             intents.append(
                 TradeIntent(

@@ -7,8 +7,13 @@ from pathlib import Path
 
 import pytest
 from kadal_kural.config import AppSettings
-from kadal_kural.domain.matcher import BilingualCatalogMatcher
-from kadal_kural.domain.models import LedgerEventStatus
+from kadal_kural.config import (
+    AMOUNT_CONFIDENCE_FLOOR,
+    AMOUNT_IN_RANGE_CONFIDENCE,
+    AMOUNT_OUT_OF_RANGE_SLOPE,
+)
+from kadal_kural.domain.matcher import BilingualCatalogMatcher, range_confidence
+from kadal_kural.domain.models import LedgerEventStatus, ValueRange
 from kadal_kural.domain.normalizer import (
     format_inr_for_timbre_prosody,
     normalize_hybrid_tamil_numerals,
@@ -106,6 +111,68 @@ def test_recognised_unit_does_not_cap_confidence() -> None:
     (intent,) = matcher.parse_utterance("குமரனுக்கு 30 கிலோ டைகர் பிரான் 500 ரேட்டு")
     assert intent.unit == "kg"
     assert intent.overall_confidence > settings.assumed_unit_confidence
+
+
+@pytest.fixture(scope="module")
+def catalog_matcher() -> BilingualCatalogMatcher:
+    return BilingualCatalogMatcher(AppSettings().catalog_path)
+
+
+def _bands(matcher: BilingualCatalogMatcher) -> list[ValueRange]:
+    return [sku.rate_range_inr for sku in matcher.skus.values()] + list(
+        matcher.unit_quantity_ranges.values()
+    )
+
+
+def test_range_confidence_is_full_on_both_inclusive_edges(catalog_matcher: BilingualCatalogMatcher) -> None:
+    for band in _bands(catalog_matcher):
+        assert range_confidence(band.min, band) == AMOUNT_IN_RANGE_CONFIDENCE, band
+        assert range_confidence(band.max, band) == AMOUNT_IN_RANGE_CONFIDENCE, band
+
+
+def test_range_confidence_drops_just_outside_each_edge(catalog_matcher: BilingualCatalogMatcher) -> None:
+    for band in _bands(catalog_matcher):
+        above = range_confidence(band.max + 1, band)
+        expected_above = round(AMOUNT_IN_RANGE_CONFIDENCE - AMOUNT_OUT_OF_RANGE_SLOPE * (1 / band.max), 3)
+        assert above < AMOUNT_IN_RANGE_CONFIDENCE and above == expected_above, band
+        if band.min > 1:
+            below = range_confidence(band.min - 1, band)
+            expected_below = round(
+                AMOUNT_IN_RANGE_CONFIDENCE - AMOUNT_OUT_OF_RANGE_SLOPE * (band.min / (band.min - 1) - 1), 3
+            )
+            assert below < AMOUNT_IN_RANGE_CONFIDENCE and below == expected_below, band
+
+
+def test_range_confidence_falls_monotonically_to_the_floor() -> None:
+    band = ValueRange(min=300, max=1500)
+    above = [range_confidence(v, band) for v in (1500, 1650, 2000, 3000, 30_000)]
+    below = [range_confidence(v, band) for v in (300, 270, 200, 100, 1)]
+    for seq in (above, below):
+        assert seq == sorted(seq, reverse=True)
+        assert seq[-1] == AMOUNT_CONFIDENCE_FLOOR
+    assert range_confidence(0, band) == AMOUNT_CONFIDENCE_FLOOR
+    assert range_confidence(-5, band) == AMOUNT_CONFIDENCE_FLOOR
+
+
+def test_value_range_rejects_inverted_bounds() -> None:
+    with pytest.raises(ValueError):
+        ValueRange(min=10, max=5)
+
+
+def test_out_of_range_rate_lowers_overall_confidence(catalog_matcher: BilingualCatalogMatcher) -> None:
+    band = catalog_matcher.skus["SKU-PRW-TIG"].rate_range_inr
+    (in_range,) = catalog_matcher.parse_utterance(f"குமரனுக்கு 30 கிலோ டைகர் பிரான் {band.max} ரேட்டு")
+    (dropped_hundreds,) = catalog_matcher.parse_utterance("குமரனுக்கு 30 கிலோ டைகர் பிரான் 60 ரேட்டு")
+    assert in_range.overall_confidence > dropped_hundreds.overall_confidence
+    assert dropped_hundreds.overall_confidence == AMOUNT_CONFIDENCE_FLOOR
+
+
+def test_out_of_range_quantity_lowers_overall_confidence(catalog_matcher: BilingualCatalogMatcher) -> None:
+    band = catalog_matcher.unit_quantity_ranges["kg"]
+    (in_range,) = catalog_matcher.parse_utterance(f"குமரனுக்கு {band.max} கிலோ டைகர் பிரான் 500 ரேட்டு")
+    (too_many,) = catalog_matcher.parse_utterance(f"குமரனுக்கு {band.max * 2} கிலோ டைகர் பிரான் 500 ரேட்டு")
+    assert in_range.overall_confidence > too_many.overall_confidence
+    assert too_many.overall_confidence == AMOUNT_CONFIDENCE_FLOOR
 
 
 def test_strip_tamil_dative_suffixes() -> None:

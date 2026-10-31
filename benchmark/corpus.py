@@ -50,9 +50,11 @@ _SKU_PHRASES: Final[dict[str, Tuple[Tuple[str, str, str], ...]]] = {
     # (spoken SKU phrase, spoken Tamil unit word, canonical unit the matcher resolves to —
     # CANONICAL_UNIT_MAP always normalizes to the short English form regardless of input
     # script, so ground truth must store that, not the word actually spoken)
+    # Vanjaram is quoted and sold per kg at Kasimedu (see ValueRange in models.py), so every
+    # Vanjaram clause says கிலோ and its rate is a per-kg price inside catalog rate_range_inr.
     SKU_VANJARAM: (
-        ("வஞ்சரம்", "பாக்ஸ்", "box"),
-        ("எக்ஸ்போர்ட் வஞ்சரம்", "பாக்ஸ்", "box"),
+        ("வஞ்சரம்", "கிலோ", "kg"),
+        ("எக்ஸ்போர்ட் வஞ்சரம்", "கிலோ", "kg"),
     ),
     SKU_PRAWN: (("டைகர் பிரான்", "கிலோ", "kg"),),
 }
@@ -69,18 +71,19 @@ _QTY_WORD: Final[dict[int, str]] = {
 }
 _QTY_TANGLISH: Final[dict[int, str]] = {20: "irubathi", 30: "muppathi", 40: "naarpadhu", 50: "aimbadhu"}
 
+# Every rate is inside its SKU's catalog rate_range_inr (Vanjaram ₹400–1,600/kg, Tiger Prawn
+# ₹300–1,500/kg); see test_every_corpus_amount_is_inside_its_catalog_band.
 _RATE_DIGIT: Final[dict[int, str]] = {
-    r: str(r) for r in (100, 150, 200, 250, 300, 450, 500, 560, 600, 700, 740, 800)
+    r: str(r) for r in (500, 600, 700, 800, 950, 1200)
 }
 _RATE_WORD: Final[dict[int, str]] = {
-    100: "நூறு", 150: "நூற்று ஐம்பது", 200: "இருநூறு", 250: "இருநூற்று ஐம்பது",
-    300: "முந்நூறு", 450: "நானூற்றி ஐம்பது", 500: "ஐநூறு", 600: "அறுநூறு",
-    700: "எழுநூறு", 800: "எண்ணூறு",
+    450: "நானூற்றி ஐம்பது", 650: "அறுநூற்றி ஐம்பது", 700: "எழுநூறு", 800: "எண்ணூறு",
+    900: "தொள்ளாயிரம்", 600: "அறுநூறு",
 }
 _RATE_HYBRID: Final[dict[int, str]] = {
     # additive-prefix word + digit remainder — the shape Prisma emits most often per the
     # live ITN probe (docs/itn_findings.md, Finding 1 & 2)
-    560: "ஐநூற்று 60", 740: "எழுநூற்றி 40", 215: "இருநூற்றி 15",
+    560: "ஐநூற்று 60", 740: "எழுநூற்றி 40", 350: "முந்நூற்றி 50", 1050: "ஆயிரத்தி 50",
 }
 
 
@@ -131,22 +134,22 @@ def _clause(
 def _build_single_trade_utterances() -> List[BenchmarkUtterance]:
     utterances: List[BenchmarkUtterance] = []
     combos = [
-        (BUY_SENTHIL, 0, SKU_VANJARAM, 0, 25, 250, "single_digit", _QTY_DIGIT, _RATE_DIGIT),
+        (BUY_SENTHIL, 0, SKU_VANJARAM, 0, 10, 800, "single_digit", _QTY_DIGIT, _RATE_DIGIT),
         (BUY_SENTHIL, 1, SKU_VANJARAM, 0, 40, 740, "single_hybrid", _QTY_DIGIT, _RATE_HYBRID),
         (BUY_SENTHIL, 0, SKU_PRAWN, 0, 15, 560, "single_hybrid", _QTY_WORD, _RATE_HYBRID),
-        (BUY_SENTHIL, 0, SKU_VANJARAM, 1, 20, 215, "single_hybrid", _QTY_WORD, _RATE_HYBRID),
+        (BUY_SENTHIL, 0, SKU_VANJARAM, 1, 20, 1050, "single_hybrid", _QTY_WORD, _RATE_HYBRID),
         (BUY_SENTHIL, 1, SKU_PRAWN, 0, 10, 700, "single_word", _QTY_WORD, _RATE_WORD),
-        (BUY_SENTHIL, 0, SKU_VANJARAM, 0, 50, 300, "single_digit", _QTY_DIGIT, _RATE_DIGIT),
+        (BUY_SENTHIL, 0, SKU_VANJARAM, 0, 30, 600, "single_digit", _QTY_DIGIT, _RATE_DIGIT),
         (BUY_SENTHIL, 0, SKU_PRAWN, 0, 30, 450, "single_word", _QTY_WORD, _RATE_WORD),
         (BUY_SENTHIL, 1, SKU_VANJARAM, 0, 60, 800, "single_digit", _QTY_DIGIT, _RATE_DIGIT),
         (BUY_KUMARAN, 0, SKU_PRAWN, 0, 10, 500, "single_digit", _QTY_DIGIT, _RATE_DIGIT),
-        (BUY_KUMARAN, 0, SKU_VANJARAM, 0, 20, 250, "single_word", _QTY_WORD, _RATE_WORD),
+        (BUY_KUMARAN, 0, SKU_VANJARAM, 0, 20, 900, "single_word", _QTY_WORD, _RATE_WORD),
         (BUY_KUMARAN, 0, SKU_PRAWN, 0, 60, 740, "single_hybrid", _QTY_DIGIT, _RATE_HYBRID),
-        (BUY_KUMARAN, 0, SKU_VANJARAM, 1, 15, 200, "single_word", _QTY_WORD, _RATE_WORD),
+        (BUY_KUMARAN, 0, SKU_VANJARAM, 1, 15, 800, "single_word", _QTY_WORD, _RATE_WORD),
         (BUY_KUMARAN, 0, SKU_PRAWN, 0, 25, 560, "single_hybrid", _QTY_WORD, _RATE_HYBRID),
         (BUY_KUMARAN, 0, SKU_VANJARAM, 0, 40, 600, "single_digit", _QTY_DIGIT, _RATE_DIGIT),
-        (BUY_KUMARAN, 0, SKU_PRAWN, 0, 50, 150, "single_word", _QTY_WORD, _RATE_WORD),
-        (BUY_KUMARAN, 0, SKU_VANJARAM, 0, 30, 100, "single_digit", _QTY_DIGIT, _RATE_DIGIT),
+        (BUY_KUMARAN, 0, SKU_PRAWN, 0, 50, 650, "single_word", _QTY_WORD, _RATE_WORD),
+        (BUY_KUMARAN, 0, SKU_VANJARAM, 0, 30, 1200, "single_digit", _QTY_DIGIT, _RATE_DIGIT),
     ]
     for idx, (buyer_id, buyer_variant, sku_id, sku_variant, qty, rate, category, qty_map, rate_map) in enumerate(
         combos, start=1
@@ -172,10 +175,10 @@ def _build_single_trade_utterances() -> List[BenchmarkUtterance]:
     # deliberately exercises the known strip_tamil_dative_suffix gap on bare "கு" flagged in
     # docs/itn_findings.md Finding 4, so the benchmark measures its real-world impact.
     tanglish_combos = [
-        (BUY_SENTHIL, SKU_VANJARAM, 20, "box", 250),
+        (BUY_SENTHIL, SKU_VANJARAM, 20, "kg", 950),
         (BUY_KUMARAN, SKU_PRAWN, 30, "kg", 500),
         (BUY_SENTHIL, SKU_PRAWN, 40, "kg", 700),
-        (BUY_KUMARAN, SKU_VANJARAM, 50, "box", 300),
+        (BUY_KUMARAN, SKU_VANJARAM, 50, "kg", 700),
     ]
     for idx, (buyer_id, sku_id, qty, unit_en, rate) in enumerate(tanglish_combos, start=1):
         buyer_short = "Senthil" if buyer_id == BUY_SENTHIL else "Kumaran"
@@ -202,15 +205,15 @@ def _build_single_trade_utterances() -> List[BenchmarkUtterance]:
 
 def _build_multi_trade_utterances() -> List[BenchmarkUtterance]:
     first_combos = [
-        (BUY_SENTHIL, 0, SKU_VANJARAM, 0, 25, 250, _QTY_DIGIT, _RATE_DIGIT),
+        (BUY_SENTHIL, 0, SKU_VANJARAM, 0, 10, 800, _QTY_DIGIT, _RATE_DIGIT),
         (BUY_SENTHIL, 1, SKU_PRAWN, 0, 15, 560, _QTY_WORD, _RATE_HYBRID),
         (BUY_KUMARAN, 0, SKU_VANJARAM, 1, 40, 740, _QTY_DIGIT, _RATE_HYBRID),
-        (BUY_SENTHIL, 0, SKU_VANJARAM, 0, 50, 300, _QTY_WORD, _RATE_WORD),
-        (BUY_KUMARAN, 0, SKU_PRAWN, 0, 20, 215, _QTY_WORD, _RATE_HYBRID),
+        (BUY_SENTHIL, 0, SKU_VANJARAM, 0, 30, 600, _QTY_WORD, _RATE_WORD),
+        (BUY_KUMARAN, 0, SKU_PRAWN, 0, 20, 350, _QTY_WORD, _RATE_HYBRID),
     ]
     second_combos = [
         (BUY_KUMARAN, 0, SKU_PRAWN, 0, 10, 500, _QTY_DIGIT, _RATE_DIGIT),
-        (BUY_KUMARAN, 0, SKU_VANJARAM, 0, 20, 200, _QTY_WORD, _RATE_WORD),
+        (BUY_KUMARAN, 0, SKU_VANJARAM, 0, 10, 800, _QTY_WORD, _RATE_WORD),
         (BUY_SENTHIL, 0, SKU_PRAWN, 0, 30, 450, _QTY_WORD, _RATE_WORD),
         (BUY_KUMARAN, 0, SKU_PRAWN, 0, 60, 740, _QTY_DIGIT, _RATE_HYBRID),
         (BUY_SENTHIL, 1, SKU_VANJARAM, 0, 40, 600, _QTY_DIGIT, _RATE_DIGIT),

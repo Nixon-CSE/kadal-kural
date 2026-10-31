@@ -24,6 +24,15 @@ WS_PING_INTERVAL_SEC: float = 20.0
 # default confidence_threshold so an assumed unit routes the trade to confirmation.
 DEFAULT_ASSUMED_UNIT_CONFIDENCE: float = 0.75
 
+# Amount sanity scoring against catalog.json's per-SKU rate_range_inr and per-unit
+# unit_quantity_ranges. Inside the band scores 1.0; outside, confidence drops linearly with
+# the relative distance past the nearer bound (value/max - 1 above, min/value - 1 below),
+# so 10% outside scores 0.9, ~18% outside falls under the default 0.82 gate, and a 2x miss
+# (e.g. a dropped hundreds word, 60 for 560) bottoms out at the floor.
+AMOUNT_IN_RANGE_CONFIDENCE: float = 1.0
+AMOUNT_OUT_OF_RANGE_SLOPE: float = 1.0
+AMOUNT_CONFIDENCE_FLOOR: float = 0.0
+
 
 def frame_pace_seconds(sample_rate: int) -> float:
     """Real-time duration of one 1,024-byte PCM frame at ``sample_rate`` (64ms @ 8kHz, 32ms @ 16kHz)."""

@@ -15,6 +15,7 @@ from benchmark.noise_profiles import measured_snr_db, rms
 from benchmark.run_eval import (
     CLEAN_PROFILE,
     DiskCache,
+    Pcm,
     TranscriptOutcome,
     build_stt_audio,
     build_work_items,
@@ -60,8 +61,9 @@ def test_every_clean_corpus_utterance_scores_perfectly(scorer: Scorer) -> None:
 
 
 def test_confident_wrong_rate_is_a_silent_error_the_gate_cannot_see(scorer: Scorer) -> None:
-    utt = _utt("single_01")  # "... 250 ரேட்டு"
-    s = scorer.score(utt, utt.spoken_text.replace("250", "520"), 0.0)
+    utt = _utt("single_01")
+    rate = str(utt.ground_truth_trades[0].rate_inr)
+    s = scorer.score(utt, utt.spoken_text.replace(rate, "520"), 0.0)
     assert s.entity_correct["rate"] == 0
     assert (s.gated.silent_errors, s.ungated.silent_errors) == (1, 1)
 
@@ -155,9 +157,10 @@ class FakeBackend:
         self.calls = {"tts": 0, "stt": 0}
         self._by_len = transcript_for
 
-    async def synthesize_clean_8k(self, text: str) -> np.ndarray:
+    async def synthesize_clean_8k(self, text: str) -> Pcm:
         self.calls["tts"] += 1
-        return (3000 * np.sin(2 * np.pi * 200 * np.arange(_SR) / _SR)).astype(np.int16)
+        tone: Pcm = (3000 * np.sin(2 * np.pi * 200 * np.arange(_SR) / _SR)).astype(np.int16)
+        return tone
 
     async def transcribe(self, pcm_8k: bytes) -> TranscriptOutcome:
         self.calls["stt"] += 1
@@ -198,7 +201,7 @@ def test_changed_spoken_text_misses_the_cache(settings: AppSettings, tmp_path: P
     from dataclasses import replace
 
     original = _utt("single_01")
-    edited = replace(original, spoken_text=original.spoken_text.replace("250", "650"))
+    edited = replace(original, spoken_text=original.spoken_text + " ")
     items = build_work_items([original], ["harbour"], [10.0], include_clean=True)
     cache = DiskCache(tmp_path / "cache", settings, 300, 860)
     asyncio.run(gather_transcripts(items, FakeBackend({}), cache, settings, concurrency=2))
@@ -228,7 +231,8 @@ def test_failed_items_are_recorded_and_excluded_not_fatal(settings: AppSettings,
 def test_summarize_pools_sfer_over_trades(scorer: Scorer) -> None:
     utt = _utt("single_01")
     good = scorer.score(utt, utt.spoken_text, 100.0)
-    bad = scorer.score(utt, utt.spoken_text.replace("250", "520"), 300.0)
+    rate = str(utt.ground_truth_trades[0].rate_inr)
+    bad = scorer.score(utt, utt.spoken_text.replace(rate, "520"), 300.0)
     from benchmark.run_eval import EvalRow, WorkItem
 
     rows: List[EvalRow] = [
