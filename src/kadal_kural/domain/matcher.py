@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 from rapidfuzz import fuzz, process
 
+from kadal_kural.config import DEFAULT_ASSUMED_UNIT_CONFIDENCE
 from kadal_kural.domain.models import BuyerProfile, HeldTradeContext, SKUProfile, TradeIntent
 from kadal_kural.domain.normalizer import (
     BARGE_IN_OVERRIDE_MARKERS,
@@ -22,7 +23,12 @@ from kadal_kural.domain.normalizer import (
 class BilingualCatalogMatcher:
     """Matches Tamil and Latin script buyer and SKU phrases against a domain catalog."""
 
-    def __init__(self, catalog_path: Union[str, Path]) -> None:
+    def __init__(
+        self,
+        catalog_path: Union[str, Path],
+        assumed_unit_confidence: float = DEFAULT_ASSUMED_UNIT_CONFIDENCE,
+    ) -> None:
+        self.assumed_unit_confidence = assumed_unit_confidence
         raw_data = json.loads(Path(catalog_path).read_text(encoding="utf-8"))
         self.domain_id: str = raw_data["domain_id"]
         self.domain_title: str = raw_data["domain_title"]
@@ -111,12 +117,14 @@ class BilingualCatalogMatcher:
                 else (held_context.rate_inr if (held_context and is_override) else None)
             )
 
-            unit = "box"
+            # An unrecognised word after the quantity leaves unit unresolved; it falls back
+            # to the matched SKU's default_unit below, at reduced unit confidence.
+            heard_unit: Optional[str] = None
             unit_end_idx = qty_token_idx
             if qty_token_idx + 1 < len(tokens):
                 candidate_unit = tokens[qty_token_idx + 1].lower()
                 if candidate_unit in CANONICAL_UNIT_MAP:
-                    unit = CANONICAL_UNIT_MAP[candidate_unit]
+                    heard_unit = CANONICAL_UNIT_MAP[candidate_unit]
                     unit_end_idx = qty_token_idx + 1
 
             buyer_phrase = " ".join(tokens[:qty_token_idx]).strip()
@@ -134,15 +142,25 @@ class BilingualCatalogMatcher:
             ]
             sku_phrase = " ".join(sku_tokens).strip()
             sku, sku_conf = self.resolve_sku(sku_phrase)
+            sku_inherited = False
             if sku is None and held_context and is_override:
                 sku = self.skus.get(held_context.sku_id)
                 sku_conf = 0.92
-                if sku is not None:
-                    unit = sku.default_unit
+                sku_inherited = sku is not None
+
+            if heard_unit is not None:
+                unit, unit_conf = heard_unit, 1.0
+            elif sku is not None:
+                unit = sku.default_unit
+                # A barge-in override inherits the held trade's SKU, so its default unit is
+                # carried context (same 0.92 as the inherited SKU), not a guess.
+                unit_conf = sku_conf if sku_inherited else self.assumed_unit_confidence
+            else:
+                unit, unit_conf = "box", self.assumed_unit_confidence
 
             total_val = (quantity or 0) * (rate_inr or 0)
             rate_conf = 1.0 if rate_inr is not None and rate_inr > 0 else 0.0
-            overall_conf = round(min(buyer_conf, sku_conf, rate_conf), 3)
+            overall_conf = round(min(buyer_conf, sku_conf, unit_conf, rate_conf), 3)
 
             intents.append(
                 TradeIntent(

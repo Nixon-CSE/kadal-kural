@@ -82,6 +82,32 @@ def test_normalize_additive_prefix_with_case_ending_multi_09() -> None:
     )
 
 
+# Harbour-condition (10 dB and 5 dB) Prisma transcript for tanglish_02, copied verbatim from
+# benchmark/results.csv. Spoken 'kg' came back as 'கார்', which isn't a unit word, and the
+# matcher used to fall back to 'box' silently instead of the prawn SKU's default 'kg'.
+TANGLISH_02_HARBOUR_TRANSCRIPT = "குமரன்க்கு முப்பத்தி கார் ஜப்ரான் 500 ரேட்டு"
+
+
+def test_unrecognised_unit_falls_back_to_sku_default_tanglish_02() -> None:
+    settings = AppSettings()
+    matcher = BilingualCatalogMatcher(settings.catalog_path, settings.assumed_unit_confidence)
+    (intent,) = matcher.parse_utterance(TANGLISH_02_HARBOUR_TRANSCRIPT)
+    assert intent.sku_id == "SKU-PRW-TIG"
+    assert intent.quantity == 30
+    assert intent.rate_inr == 500
+    assert intent.unit == "kg"
+    assert settings.assumed_unit_confidence < 1.0
+    assert intent.overall_confidence <= settings.assumed_unit_confidence
+
+
+def test_recognised_unit_does_not_cap_confidence() -> None:
+    settings = AppSettings()
+    matcher = BilingualCatalogMatcher(settings.catalog_path, settings.assumed_unit_confidence)
+    (intent,) = matcher.parse_utterance("குமரனுக்கு 30 கிலோ டைகர் பிரான் 500 ரேட்டு")
+    assert intent.unit == "kg"
+    assert intent.overall_confidence > settings.assumed_unit_confidence
+
+
 def test_strip_tamil_dative_suffixes() -> None:
     assert strip_tamil_dative_suffix("செந்தில் சீஃபுட்ஸ்க்கு") == "செந்தில் சீஃபுட்ஸ்"
     assert strip_tamil_dative_suffix("குமரனுக்கு") == "குமரன்"

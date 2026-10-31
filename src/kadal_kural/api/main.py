@@ -45,7 +45,7 @@ class UtteranceIngestRequest(BaseModel):
 
 def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
     cfg = settings or AppSettings()
-    matcher = BilingualCatalogMatcher(cfg.catalog_path)
+    matcher = BilingualCatalogMatcher(cfg.catalog_path, cfg.assumed_unit_confidence)
     repo = AppendOnlyLedgerRepository(cfg.db_path, list(matcher.buyers.values()))
     firewall = PreDispatchCreditFirewallService(cfg, matcher, repo)
     speech_client = GnaniArthaSpeechClient(cfg)

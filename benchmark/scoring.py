@@ -169,7 +169,7 @@ class Scorer:
 
     def __init__(self, settings: AppSettings, workdir: Optional[Path] = None) -> None:
         self.settings = settings
-        self.matcher = BilingualCatalogMatcher(settings.catalog_path)
+        self.matcher = BilingualCatalogMatcher(settings.catalog_path, settings.assumed_unit_confidence)
         self._tmp = tempfile.TemporaryDirectory()
         base = Path(self._tmp.name) if workdir is None else workdir
         self.gated = FreshLedgerFirewall(settings, self.matcher, base / "gated.db")

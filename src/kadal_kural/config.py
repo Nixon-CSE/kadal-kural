@@ -19,6 +19,11 @@ SUPPORTED_PCM_SAMPLE_RATES: tuple[int, ...] = (8000, 16000)
 LIVE_MIC_SAMPLE_RATE: int = 8000
 WS_PING_INTERVAL_SEC: float = 20.0
 
+# Unit confidence when the word after the quantity isn't a recognised unit and the matcher
+# falls back to the SKU's default_unit (e.g. 'kg' heard as 'கார்'). Deliberately below the
+# default confidence_threshold so an assumed unit routes the trade to confirmation.
+DEFAULT_ASSUMED_UNIT_CONFIDENCE: float = 0.75
+
 
 def frame_pace_seconds(sample_rate: int) -> float:
     """Real-time duration of one 1,024-byte PCM frame at ``sample_rate`` (64ms @ 8kHz, 32ms @ 16kHz)."""
@@ -58,6 +63,7 @@ class AppSettings(BaseSettings):
 
     # Credit Firewall & Persistence Parameters
     confidence_threshold: float = Field(default=0.82, ge=0.50, le=0.99)
+    assumed_unit_confidence: float = Field(default=DEFAULT_ASSUMED_UNIT_CONFIDENCE, ge=0.0, le=1.0)
     db_path: str = Field(default="kadal_kural.db")
     catalog_path: str = Field(default=str(PACKAGE_ROOT / "data" / "catalog.json"))
 
