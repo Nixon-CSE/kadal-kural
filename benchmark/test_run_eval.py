@@ -288,6 +288,20 @@ def test_stt_client_timing_round_trips_through_cache_csv_and_stage_table(
     assert loaded is not None and loaded.stt_client is None
 
 
+def test_failure_modes_count_prisma_stt_stalls(scorer: Scorer) -> None:
+    from benchmark.run_eval import EvalRow, WorkItem, _failure_paragraph
+
+    utt = _utt("single_01")
+    good = scorer.score(utt, utt.spoken_text, 200.0)
+    rows = [
+        EvalRow(WorkItem(utt, "market", 5.0), TranscriptOutcome(utt.spoken_text, 200.0, 1), good),
+        EvalRow(WorkItem(utt, "traffic", 5.0), TranscriptOutcome(utt.spoken_text, 10_340.0, 1), good),
+    ]
+    noisy = summarize("noisy", rows)
+    text = _failure_paragraph(rows, [summarize("market @ 5 dB", rows[:1])], noisy)
+    assert "1 item(s) (50.0%, clean and noisy alike) had a Prisma-reported STT latency of 10.3–10.3 s" in text
+
+
 def test_regenerated_report_keeps_the_hand_maintained_tail() -> None:
     from benchmark.run_eval import MANUAL_SECTIONS_MARKER, keep_manual_sections
 

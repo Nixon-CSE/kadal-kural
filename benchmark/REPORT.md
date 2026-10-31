@@ -16,23 +16,23 @@ Generated 2026-10-31 by `benchmark/run_eval.py` — 45 utterances × conditions 
 
 | Condition | n | WER (norm.) | WER (raw) | buyer | SKU | qty | unit | rate | STT P50 / P95 ms | firewall P50 / P95 ms | SFER gate ON | SFER gate OFF |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| clean (no noise) | 45 | 10.2% | 25.9% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 266 / 8322 | 0.15 / 0.16 | 0.0% (0/70) | 0.0% (0/70) |
+| clean (no noise) | 45 | 10.2% | 25.9% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 266 / 8322 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
 | harbour @ 10 dB | 45 | 11.8% | 27.5% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 214 / 297 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| harbour @ 5 dB | 45 | 12.1% | 27.8% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 218 / 341 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| market @ 10 dB | 45 | 12.8% | 28.3% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 208 / 306 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| market @ 5 dB | 45 | 17.6% | 32.2% | 94.3% | 91.4% | 91.4% | 91.4% | 87.1% | 209 / 340 | 0.11 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| traffic @ 10 dB | 45 | 11.1% | 26.7% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 223 / 361 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| harbour @ 5 dB | 45 | 12.1% | 27.8% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 218 / 341 | 0.15 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
+| market @ 10 dB | 45 | 12.8% | 28.3% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 208 / 306 | 0.15 / 0.19 | 0.0% (0/70) | 0.0% (0/70) |
+| market @ 5 dB | 45 | 17.6% | 32.2% | 94.3% | 91.4% | 91.4% | 91.4% | 87.1% | 209 / 340 | 0.11 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
+| traffic @ 10 dB | 45 | 11.1% | 26.7% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 223 / 361 | 0.15 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
 | traffic @ 5 dB | 45 | 11.4% | 27.2% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 202 / 406 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| ice_crusher @ 10 dB | 45 | 12.3% | 27.6% | 100.0% | 95.7% | 95.7% | 95.7% | 95.7% | 204 / 305 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| ice_crusher @ 5 dB | 45 | 13.6% | 28.8% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 217 / 328 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| ice_crusher @ 10 dB | 45 | 12.3% | 27.6% | 100.0% | 95.7% | 95.7% | 95.7% | 95.7% | 204 / 305 | 0.14 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
+| ice_crusher @ 5 dB | 45 | 13.6% | 28.8% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 217 / 328 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
 
 ### Roll-up by SNR (all four noise profiles)
 
 | Condition | n | WER (norm.) | WER (raw) | buyer | SKU | qty | unit | rate | STT P50 / P95 ms | firewall P50 / P95 ms | SFER gate ON | SFER gate OFF |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| all profiles @ 10 dB | 180 | 12.0% | 27.5% | 100.0% | 96.8% | 96.8% | 96.8% | 96.1% | 212 / 317 | 0.15 / 0.17 | 0.0% (0/280) | 0.0% (0/280) |
-| all profiles @ 5 dB | 180 | 13.7% | 29.0% | 98.6% | 95.7% | 95.7% | 95.7% | 93.9% | 215 / 346 | 0.14 / 0.17 | 0.0% (0/280) | 0.0% (0/280) |
-| **all noisy cells** | 360 | 12.8% | 28.3% | 99.3% | 96.2% | 96.2% | 96.2% | 95.0% | 214 / 345 | 0.14 / 0.17 | 0.0% (0/560) | 0.0% (0/560) |
+| all profiles @ 10 dB | 180 | 12.0% | 27.5% | 100.0% | 96.8% | 96.8% | 96.8% | 96.1% | 212 / 317 | 0.15 / 0.18 | 0.0% (0/280) | 0.0% (0/280) |
+| all profiles @ 5 dB | 180 | 13.7% | 29.0% | 98.6% | 95.7% | 95.7% | 95.7% | 93.9% | 215 / 346 | 0.14 / 0.18 | 0.0% (0/280) | 0.0% (0/280) |
+| **all noisy cells** | 360 | 12.8% | 28.3% | 99.3% | 96.2% | 96.2% | 96.2% | 95.0% | 214 / 345 | 0.14 / 0.18 | 0.0% (0/560) | 0.0% (0/560) |
 
 ## Latency by pipeline stage
 
@@ -44,8 +44,8 @@ Every scored item, all conditions. *Client-observed* STT and *STT connect* exist
 | STT, client-observed | last audio frame sent → last final transcript received | 0 | — | — |
 | STT connect | WebSocket open + handshake frame | 0 | — | — |
 | normalize | numeral normalizer | 405 | 0.013 | 0.015 |
-| match | clause split + buyer/SKU/unit/amount matching | 405 | 0.043 | 0.063 |
-| decide | confidence gate + credit check + SQLite ledger write, every intent | 405 | 0.074 | 0.085 |
+| match | clause split + buyer/SKU/unit/amount matching | 405 | 0.043 | 0.065 |
+| decide | confidence gate + credit check + SQLite ledger write, every intent | 405 | 0.073 | 0.087 |
 
 ## Does the confidence gate help?
 
@@ -67,7 +67,7 @@ Without the gate there were **no** silent errors across 560 noisy trades, so thi
 
 ## Failure modes
 
-Across 360 noisy runs the weakest extracted entity was **rate** (95.0% correct) and the worst cell by normalized WER was **market @ 5 dB** (17.6%). 0 item(s) failed outright (API error or timeout) and are excluded from the averages. No silent error survived the gate in this run. Caveats: synthetic noise and a synthetic speaker bound how far these numbers transfer to a real harbour; the corpus uses two buyers and two SKUs, so entity accuracy is easier than it would be against a large catalog.
+Across 360 noisy runs the weakest extracted entity was **rate** (95.0% correct) and the worst cell by normalized WER was **market @ 5 dB** (17.6%). 0 item(s) failed outright (API error or timeout) and are excluded from the averages. 12 item(s) (3.0%, clean and noisy alike) had a Prisma-reported STT latency of 10.3–10.4 s instead of the usual ~0.2 s. Replaying them with client-side timing showed an intermittent Prisma-side stall (no retries, no drain timeout, independent of the audio and its noise tail); the client really waits that long for the transcript. See *STT latency spikes* below. No silent error survived the gate in this run. Caveats: synthetic noise and a synthetic speaker bound how far these numbers transfer to a real harbour; the corpus uses two buyers and two SKUs, so entity accuracy is easier than it would be against a large catalog.
 
 <!-- Hand-maintained sections below: run_eval.py keeps everything after this line. -->
 
@@ -115,3 +115,24 @@ Reading it:
 - With the gate ON, all 5 noisy silent errors and the 1 clean one are gone. Four were `tanglish_02` (spoken `kg` heard as `கார்`): pre-3C booked them as `box`; now the unit falls back to the prawn SKU's `kg` at 0.75 unit confidence, so they are held for confirmation rather than booked (booked −4, correct bookings unchanged). Two were `multi_09` (`ஐநூற்று 60` heard as `ஐநூற்றுக்கு 60`): the case-ending strip now reads 560, so they book correctly (+1 correct booking each).
 - With the gate OFF, silent errors also fell 7 → 0: the fixes removed the confident mistakes themselves rather than only hiding them behind the gate.
 - Consequence for the headline: this run has no silent errors with the gate on *or* off, so it cannot show a gate benefit (see "Does the confidence gate help?"). The threshold sweep now shows only the gate's cost: at τ = 0.82 it books 378 correct trades against 413 at τ = 0.5 on the same transcripts.
+
+## STT latency spikes (Prisma-side stalls)
+
+**Finding:** the ~10 s STT outliers (12 of 405 items, 3.0%, at 10.3–10.4 s; P50 is ~0.2 s) are an **intermittent Prisma-side stall**, not a bug in our client. Evidence: `benchmark/stt_latency_diagnosis.jsonl`, produced by `scripts/diagnose_stt_latency.py`, which replays each item's exact benchmark audio (cached speech, same noise seed, lead-in and tail) with client-side timing for every Prisma event.
+
+Run (2026-10-31, one stream at a time, 72 live streams): the 12 spiking items plus 12 controls (the same utterances under a condition that had not spiked), 3 repeats each.
+
+| streams | n | attempts | connect P50 / P95 ms | final transcript after last audio frame, P50 / P95 ms | Prisma-reported latency, P50 / P95 ms | drain P50 / P95 ms |
+|---|---|---|---|---|---|---|
+| normal | 68 | 1 every time | 202 / 451 | −341 / −184 (arrives during the tail) | 191 / 241 | 367 / 367 |
+| stalled | 4 | 1 every time | 216 / 261 | 9,907 / 10,011 | 10,370 / 10,432 | 10,220 / 10,346 |
+
+Ruling out each candidate:
+
+- **Retries:** every stream, stalled or not, connected on the first attempt (no retry warnings in the 306-call re-record either).
+- **`_drain_open_utterances` timeout:** its budget is `gnani_read_timeout_sec` = 15 s and it raises on expiry, failing the item; no item failed. In the stalls the drain simply waited until Prisma's transcript arrived (~10.2 s).
+- **Trailing noise holding end-of-speech open:** clean items with a digitally silent tail stall too (`single_04`, `single_12`, `multi_16` in the sweep; `single_02` clean here), and noisy ones usually don't.
+- **The audio itself:** the 36 replays of the originally stalling items stalled once (`multi_07` @ ice_crusher/5); three of the four stalls hit control items that never stalled before (`single_12` @ harbour/10, `single_02` @ clean, `multi_07` @ market/10).
+- **Prisma:** in every stall `speech_start` arrived on time and the connection was normal, then the final transcript came ~9.9 s after the audio ended, with Prisma's own `latency` field at ~10.4 s. All four stalls fell inside one ~2-minute window (08:55:34–08:57:26), interleaved with normal streams on the same client, which points to a transient server-side condition with a ~10 s fixed delay. The stalled transcripts were still correct.
+
+Impact: when it happens, the trader waits ~10 s longer for the decision. Our side can only bound it (`gnani_read_timeout_sec`) or report it; the fix belongs to Prisma.

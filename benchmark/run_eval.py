@@ -82,6 +82,9 @@ P50, P95 = 50.0, 95.0
 # trials) and is carried over verbatim into the regenerated report.
 MANUAL_SECTIONS_MARKER = "<!-- Hand-maintained sections below: run_eval.py keeps everything after this line. -->"
 FAILURE_EXAMPLES = 3
+# A Prisma-reported STT latency at or above this is an intermittent server-side stall (see the
+# "STT latency spikes" section of REPORT.md and scripts/diagnose_stt_latency.py).
+STT_SPIKE_MS = 5000.0
 Pcm = npt.NDArray[np.int16]
 
 
@@ -774,6 +777,15 @@ def _failure_paragraph(rows: Sequence[EvalRow], cells: Sequence[CellSummary], no
         f"**{worst.label}** ({_pct(worst.wer_normalized)}). "
         f"{failed} item(s) failed outright (API error or timeout) and are excluded from the averages."
     ]
+    spikes = [x.outcome.stt_latency_ms for x in rows if x.score is not None and x.outcome.stt_latency_ms >= STT_SPIKE_MS]
+    if spikes:
+        parts.append(
+            f"{len(spikes)} item(s) ({_pct(len(spikes) / max(1, len(rows)))}, clean and noisy alike) had a "
+            f"Prisma-reported STT latency of {min(spikes) / 1000:.1f}–{max(spikes) / 1000:.1f} s instead of "
+            "the usual ~0.2 s. Replaying them with client-side timing showed an intermittent Prisma-side "
+            "stall (no retries, no drain timeout, independent of the audio and its noise tail); the client "
+            "really waits that long for the transcript. See *STT latency spikes* below."
+        )
     if examples:
         parts.append(
             "Silent errors that survived the gate (confident but wrong), spoken → heard: "
