@@ -24,7 +24,7 @@ WS_PING_INTERVAL_SEC: float = 20.0
 # default confidence_threshold so an assumed unit routes the trade to confirmation.
 DEFAULT_ASSUMED_UNIT_CONFIDENCE: float = 0.75
 
-# Amount sanity scoring against catalog.json's per-SKU rate_range_inr and per-unit
+# Amount sanity scoring against catalog.json's per-(SKU, unit) rate_range_inr and per-unit
 # unit_quantity_ranges. Inside the band scores 1.0; outside, confidence drops linearly with
 # the relative distance past the nearer bound (value/max - 1 above, min/value - 1 below),
 # so 10% outside scores 0.9, ~18% outside falls under the default 0.82 gate, and a 2x miss
@@ -32,6 +32,16 @@ DEFAULT_ASSUMED_UNIT_CONFIDENCE: float = 0.75
 AMOUNT_IN_RANGE_CONFIDENCE: float = 1.0
 AMOUNT_OUT_OF_RANGE_SLOPE: float = 1.0
 AMOUNT_CONFIDENCE_FLOOR: float = 0.0
+
+# Rate confidence when the matched SKU has no catalog rate band for the parsed unit (e.g.
+# Vanjaram quoted per box when it is only priced per kg): the rate can't be sanity-checked,
+# so it is set below the lowest confidence_threshold AppSettings allows (0.50), routing the
+# trade to PENDING_CLARIFICATION instead of booking an unchecked per-box price.
+UNPRICED_UNIT_RATE_CONFIDENCE: float = 0.4
+
+# Unit recorded when no unit word was heard and no SKU matched to supply a default_unit.
+# Such a trade already fails the gate on SKU confidence; this only fills TradeIntent.unit.
+NO_SKU_FALLBACK_UNIT: str = "box"
 
 
 def frame_pace_seconds(sample_rate: int) -> float:

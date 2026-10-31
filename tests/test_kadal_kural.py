@@ -11,6 +11,7 @@ from kadal_kural.config import (
     AMOUNT_CONFIDENCE_FLOOR,
     AMOUNT_IN_RANGE_CONFIDENCE,
     AMOUNT_OUT_OF_RANGE_SLOPE,
+    UNPRICED_UNIT_RATE_CONFIDENCE,
 )
 from kadal_kural.domain.matcher import BilingualCatalogMatcher, range_confidence
 from kadal_kural.domain.models import LedgerEventStatus, ValueRange
@@ -22,8 +23,9 @@ from kadal_kural.domain.normalizer import (
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.infrastructure.persistence import AppendOnlyLedgerRepository
 
+# Hand-typed demo transcript (not probe output). Vanjaram is priced per kg, so it says கிலோ.
 PLAYGROUND_SCREENSHOT_TRANSCRIPT = (
-    "செந்தில் சீஃபுட்ஸ்க்கு 40 பாக்ஸ் எக்ஸ்போர்ட் வஞ்சரம் எழுநூற்றி 40 ரேட்டு "
+    "செந்தில் சீஃபுட்ஸ்க்கு 40 கிலோ எக்ஸ்போர்ட் வஞ்சரம் எழுநூற்றி 40 ரேட்டு "
     "குமரனுக்கு 60 கிலோ டைகர் ஃப்ராண்ட் ஐநூற்றி 60 ரேட்டு கிரெடிட்டில் ஏற்று"
 )
 
@@ -119,9 +121,8 @@ def catalog_matcher() -> BilingualCatalogMatcher:
 
 
 def _bands(matcher: BilingualCatalogMatcher) -> list[ValueRange]:
-    return [sku.rate_range_inr for sku in matcher.skus.values()] + list(
-        matcher.unit_quantity_ranges.values()
-    )
+    rate_bands = [band for sku in matcher.skus.values() for band in sku.rate_range_inr.values()]
+    return rate_bands + list(matcher.unit_quantity_ranges.values())
 
 
 def test_range_confidence_is_full_on_both_inclusive_edges(catalog_matcher: BilingualCatalogMatcher) -> None:
@@ -160,7 +161,7 @@ def test_value_range_rejects_inverted_bounds() -> None:
 
 
 def test_out_of_range_rate_lowers_overall_confidence(catalog_matcher: BilingualCatalogMatcher) -> None:
-    band = catalog_matcher.skus["SKU-PRW-TIG"].rate_range_inr
+    band = catalog_matcher.skus["SKU-PRW-TIG"].rate_range_inr["kg"]
     (in_range,) = catalog_matcher.parse_utterance(f"குமரனுக்கு 30 கிலோ டைகர் பிரான் {band.max} ரேட்டு")
     (dropped_hundreds,) = catalog_matcher.parse_utterance("குமரனுக்கு 30 கிலோ டைகர் பிரான் 60 ரேட்டு")
     assert in_range.overall_confidence > dropped_hundreds.overall_confidence
@@ -173,6 +174,33 @@ def test_out_of_range_quantity_lowers_overall_confidence(catalog_matcher: Biling
     (too_many,) = catalog_matcher.parse_utterance(f"குமரனுக்கு {band.max * 2} கிலோ டைகர் பிரான் 500 ரேட்டு")
     assert in_range.overall_confidence > too_many.overall_confidence
     assert too_many.overall_confidence == AMOUNT_CONFIDENCE_FLOOR
+
+
+def test_rate_in_a_unit_the_sku_is_not_priced_in_goes_to_clarification(tmp_path: Path) -> None:
+    # Vanjaram's catalog band is per kg only. Quoted per box, ₹740 can't be sanity-checked,
+    # even though 740 sits inside the per-kg band, so it must not book or credit-hold.
+    settings = AppSettings(db_path=str(tmp_path / "unpriced.db"))
+    matcher = BilingualCatalogMatcher(settings.catalog_path)
+    assert "box" not in matcher.skus["SKU-VAN-EXP"].rate_range_inr
+    repo = AppendOnlyLedgerRepository(settings.db_path, list(matcher.buyers.values()))
+    service = PreDispatchCreditFirewallService(settings, matcher, repo)
+
+    (decision,) = service.evaluate_utterance(
+        "செந்தில் சீஃபுட்ஸ்க்கு 40 பாக்ஸ் எக்ஸ்போர்ட் வஞ்சரம் எழுநூற்றி 40 ரேட்டு"
+    )
+    assert decision.status == LedgerEventStatus.PENDING_CLARIFICATION
+    assert decision.confidence == UNPRICED_UNIT_RATE_CONFIDENCE
+    assert repo.get_buyer_row("BUY-101")["running_balance_inr"] == 128_000
+
+
+def test_sku_without_a_rate_band_for_its_default_unit_fails_to_load(tmp_path: Path) -> None:
+    catalog = json.loads(Path(AppSettings().catalog_path).read_text(encoding="utf-8"))
+    vanjaram = next(s for s in catalog["skus"] if s["sku_id"] == "SKU-VAN-EXP")
+    vanjaram["rate_range_inr"] = {"box": vanjaram["rate_range_inr"]["kg"]}  # default_unit is kg
+    broken = tmp_path / "catalog.json"
+    broken.write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError, match="default_unit"):
+        BilingualCatalogMatcher(broken)
 
 
 def test_strip_tamil_dative_suffixes() -> None:
@@ -211,7 +239,7 @@ def test_end_to_end_credit_firewall_and_barge_in(tmp_path: Path) -> None:
     assert repo.get_buyer_row("BUY-101")["running_balance_inr"] == 128_000
 
     # Step 2: Barge-in quantity override
-    override_decisions = service.evaluate_utterance("செந்திலுக்கு 25 பாக்ஸ் மட்டும் போடு")
+    override_decisions = service.evaluate_utterance("செந்திலுக்கு 25 கிலோ மட்டும் போடு")
     assert len(override_decisions) == 1
     override = override_decisions[0]
     assert override.status == LedgerEventStatus.BOOKED_AFTER_BARGE_IN

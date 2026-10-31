@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -34,13 +34,13 @@ class BuyerProfile(BaseModel):
 class ValueRange(BaseModel):
     """
     Inclusive [min, max] sanity band for a spoken amount (catalog.json rate_range_inr per
-    SKU and unit_quantity_ranges per unit).
+    SKU, keyed by the unit the rate is quoted in, and unit_quantity_ranges per unit).
 
     The catalog bands were set from how Kasimedu wholesale trade works, decided before
     looking at any benchmark results, and are deliberately wide: they exist to catch gross
     misparses (a dropped hundreds word, a misheard quantity), not to police prices.
-      - Export Vanjaram ₹400–1,600 per kg (catalog default_unit 'kg'). Kasimedu quotes seer
-        fish per kg, never per box: DT Next reported Rs 950/kg on 26 Oct 2026 ("Kasimedu fish
+      - Export Vanjaram ₹400–1,600 per kg (catalog default_unit 'kg', and no per-box band, so
+        a box-quoted Vanjaram rate goes to clarification). Kasimedu quotes seer fish per kg: DT Next reported Rs 950/kg on 26 Oct 2026 ("Kasimedu fish
         prices rise amid low supply; seer fish sells at Rs 950 per kg"), Rs 1,200–1,400/kg the
         Sunday after the 2026 fishing ban, down from Rs 2,300/kg the week before ("Chennai: Fish
         prices dip by Rs 100–Rs 300 as supply returns to normal", 28 Jun 2026), and whole fish
@@ -73,8 +73,16 @@ class SKUProfile(BaseModel):
     canonical_name: str
     tamil_speak_name: str
     default_unit: str
-    rate_range_inr: ValueRange
+    rate_range_inr: Dict[str, ValueRange]  # keyed by the unit the rate is quoted in
     aliases: List[str]
+
+    @model_validator(mode="after")
+    def _check_default_unit_is_priced(self) -> "SKUProfile":
+        if self.default_unit not in self.rate_range_inr:
+            raise ValueError(
+                f"SKU {self.sku_id} has no rate_range_inr for its default_unit {self.default_unit!r}"
+            )
+        return self
 
 
 class TradeIntent(BaseModel):

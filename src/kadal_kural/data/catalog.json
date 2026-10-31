@@ -57,8 +57,10 @@
       "tamil_speak_name": "எக்ஸ்போர்ட் வஞ்சரம்",
       "default_unit": "kg",
       "rate_range_inr": {
-        "min": 400,
-        "max": 1600
+        "kg": {
+          "min": 400,
+          "max": 1600
+        }
       },
       "aliases": [
         "Export Vanjaram",
@@ -74,8 +76,10 @@
       "tamil_speak_name": "டைகர் பிரான்",
       "default_unit": "kg",
       "rate_range_inr": {
-        "min": 300,
-        "max": 1500
+        "kg": {
+          "min": 300,
+          "max": 1500
+        }
       },
       "aliases": [
         "Tiger Prawn",

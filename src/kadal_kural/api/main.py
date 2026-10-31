@@ -328,7 +328,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
   <div style="margin-bottom: 12px;">
     <button id="micBtn" class="btn btn-mic" onclick="toggleLiveMic()">🎙️ Start Live 8kHz Microphone Stream (Prisma v2.5 + Timbre v2.5)</button>
     <button class="btn" onclick="runScreenshotTest()">▶ Replay Verified Transcript</button>
-    <button class="btn btn-warn" onclick="runBargeInOverride()">⚡ Barge-In ("செந்திலுக்கு 25 பாக்ஸ் மட்டும் போடு")</button>
+    <button class="btn btn-warn" onclick="runBargeInOverride()">⚡ Barge-In ("செந்திலுக்கு 25 கிலோ மட்டும் போடு")</button>
     <button class="btn btn-muted" onclick="runUndoTest()">↩ Voice Undo ("கடைசி ஆர்டர் கேன்சல்")</button>
     <button class="btn btn-muted" onclick="resetDemo()">↺ Reset</button>
   </div>
@@ -517,10 +517,10 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
     }
 
     function runScreenshotTest() {
-      sendTranscript("செந்தில் சீஃபுட்ஸ்க்கு 40 பாக்ஸ் எக்ஸ்போர்ட் வஞ்சரம் எழுநூற்றி 40 ரேட்டு குமரனுக்கு 60 கிலோ டைகர் ஃப்ராண்ட் ஐநூற்றி 60 ரேட்டு கிரெடிட்டில் ஏற்று");
+      sendTranscript("செந்தில் சீஃபுட்ஸ்க்கு 40 கிலோ எக்ஸ்போர்ட் வஞ்சரம் எழுநூற்றி 40 ரேட்டு குமரனுக்கு 60 கிலோ டைகர் ஃப்ராண்ட் ஐநூற்றி 60 ரேட்டு கிரெடிட்டில் ஏற்று");
     }
     function runBargeInOverride() {
-      sendTranscript("செந்திலுக்கு 25 பாக்ஸ் மட்டும் போடு");
+      sendTranscript("செந்திலுக்கு 25 கிலோ மட்டும் போடு");
     }
     function runUndoTest() {
       sendTranscript("கடைசி ஆர்டர் கேன்சல்");

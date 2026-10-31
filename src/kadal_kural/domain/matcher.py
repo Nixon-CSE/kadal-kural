@@ -12,6 +12,8 @@ from kadal_kural.config import (
     AMOUNT_IN_RANGE_CONFIDENCE,
     AMOUNT_OUT_OF_RANGE_SLOPE,
     DEFAULT_ASSUMED_UNIT_CONFIDENCE,
+    NO_SKU_FALLBACK_UNIT,
+    UNPRICED_UNIT_RATE_CONFIDENCE,
 )
 from kadal_kural.domain.models import (
     BuyerProfile,
@@ -189,7 +191,7 @@ class BilingualCatalogMatcher:
                 # carried context (same 0.92 as the inherited SKU), not a guess.
                 unit_conf = sku_conf if sku_inherited else self.assumed_unit_confidence
             else:
-                unit, unit_conf = "box", self.assumed_unit_confidence
+                unit, unit_conf = NO_SKU_FALLBACK_UNIT, self.assumed_unit_confidence
 
             total_val = (quantity or 0) * (rate_inr or 0)
             qty_conf = range_confidence(quantity, self.unit_quantity_ranges[unit])
@@ -197,8 +199,10 @@ class BilingualCatalogMatcher:
                 rate_conf = 0.0
             elif sku is None:
                 rate_conf = 1.0  # no SKU, no band to check against; sku_conf already gates it
+            elif unit not in sku.rate_range_inr:
+                rate_conf = UNPRICED_UNIT_RATE_CONFIDENCE  # e.g. Vanjaram quoted per box
             else:
-                rate_conf = range_confidence(rate_inr, sku.rate_range_inr)
+                rate_conf = range_confidence(rate_inr, sku.rate_range_inr[unit])
             overall_conf = round(min(buyer_conf, sku_conf, unit_conf, qty_conf, rate_conf), 3)
 
             intents.append(

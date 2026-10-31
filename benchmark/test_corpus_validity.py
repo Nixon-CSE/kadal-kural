@@ -82,7 +82,8 @@ def test_corpus_ground_truth_matches_clean_text_parse() -> None:
 def test_every_corpus_amount_is_inside_its_catalog_band() -> None:
     """
     The corpus models plausible trades, so every ground-truth rate must sit inside its SKU's
-    business-set catalog rate_range_inr and every quantity inside its unit's band. An
+    business-set catalog rate_range_inr for the quoted unit, and every quantity inside its
+    unit's band. An
     out-of-band amount would make the amount-sanity score, not noise, fail the clean trade.
     """
     matcher = BilingualCatalogMatcher(AppSettings().catalog_path)
@@ -90,9 +91,11 @@ def test_every_corpus_amount_is_inside_its_catalog_band() -> None:
     outside = []
     for utterance in build_corpus():
         for i, truth in enumerate(utterance.ground_truth_trades):
-            rate_band = sku_by_name[truth.sku_canonical_name].rate_range_inr
+            rate_band = sku_by_name[truth.sku_canonical_name].rate_range_inr.get(truth.unit)
             qty_band = matcher.unit_quantity_ranges[truth.unit]
-            if not rate_band.min <= truth.rate_inr <= rate_band.max:
+            if rate_band is None:
+                outside.append(f"{utterance.utterance_id}[{i}]: SKU not priced per {truth.unit}")
+            elif not rate_band.min <= truth.rate_inr <= rate_band.max:
                 outside.append(f"{utterance.utterance_id}[{i}]: rate {truth.rate_inr} outside {rate_band}")
             if not qty_band.min <= truth.quantity <= qty_band.max:
                 outside.append(f"{utterance.utterance_id}[{i}]: qty {truth.quantity} outside {qty_band}")
