@@ -245,6 +245,17 @@ def test_summarize_pools_sfer_over_trades(scorer: Scorer) -> None:
     assert cell.stt_p50 == pytest.approx(200.0)
 
 
+def test_regenerated_report_keeps_the_hand_maintained_tail() -> None:
+    from benchmark.run_eval import MANUAL_SECTIONS_MARKER, keep_manual_sections
+
+    old = f"# old generated\n\nstale numbers\n\n{MANUAL_SECTIONS_MARKER}\n\n## Barge-in\n\n| P50 | 12 |\n"
+    merged = keep_manual_sections("# new generated\n\nfresh numbers\n", old)
+    assert merged == f"# new generated\n\nfresh numbers\n\n{MANUAL_SECTIONS_MARKER}\n\n## Barge-in\n\n| P50 | 12 |\n"
+    assert "stale" not in merged
+    assert keep_manual_sections("# new\n", None) == "# new\n"
+    assert keep_manual_sections("# new\n", "# old without marker\n") == "# new\n"
+
+
 def test_conditions_filter_selects_only_listed_cells() -> None:
     from benchmark.run_eval import build_work_items, filter_conditions, parse_conditions
 

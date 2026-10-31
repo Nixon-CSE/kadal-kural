@@ -75,6 +75,10 @@ LIVE_CALLS_NEEDING_CONFIRMATION = 100
 BASE_SEED = 20261026
 THRESHOLD_GRID: Tuple[float, ...] = (0.5, 0.6, 0.7, 0.8, 0.82, 0.9, 0.95)
 P50, P95 = 50.0, 95.0
+# REPORT.md is regenerated on every run; everything after this line is hand-maintained
+# (measurements run_eval.py cannot reproduce, e.g. other code versions or live barge-in
+# trials) and is carried over verbatim into the regenerated report.
+MANUAL_SECTIONS_MARKER = "<!-- Hand-maintained sections below: run_eval.py keeps everything after this line. -->"
 FAILURE_EXAMPLES = 3
 Pcm = npt.NDArray[np.int16]
 
@@ -656,6 +660,14 @@ def render_report(
     )
 
 
+def keep_manual_sections(new_report: str, existing_report: Optional[str]) -> str:
+    """Appends the hand-maintained tail of ``existing_report`` (from the marker on) to ``new_report``."""
+    if existing_report is None or MANUAL_SECTIONS_MARKER not in existing_report:
+        return new_report
+    tail = existing_report.split(MANUAL_SECTIONS_MARKER, 1)[1]
+    return f"{new_report.rstrip()}\n\n{MANUAL_SECTIONS_MARKER}{tail}"
+
+
 def _acceptance_text(noisy: CellSummary, settings: AppSettings) -> str:
     on, off = noisy.errors_gated, noisy.errors_ungated
     if off == 0:
@@ -777,7 +789,9 @@ async def main_async(args: argparse.Namespace) -> int:
         f"{' (SAMPLE RUN — not the full sweep)' if args.limit else ''}"
     )
     report = render_report(rows, sweep, settings, {"date": date.today().isoformat(), "scope": scope})
-    (args.out_dir / "REPORT.md").write_text(report, encoding="utf-8")
+    report_path = args.out_dir / "REPORT.md"
+    existing = report_path.read_text(encoding="utf-8") if report_path.exists() else None
+    report_path.write_text(keep_manual_sections(report, existing), encoding="utf-8")
     logger.info("wrote %s and %s", args.out_dir / "results.csv", args.out_dir / "REPORT.md")
     return 0
 

@@ -16,27 +16,27 @@ Generated 2026-10-31 by `benchmark/run_eval.py` — 45 utterances × conditions 
 
 | Condition | n | WER (norm.) | WER (raw) | buyer | SKU | qty | unit | rate | STT P50 / P95 ms | firewall P50 / P95 ms | SFER gate ON | SFER gate OFF |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| clean (no noise) | 45 | 10.1% | 25.4% | 98.6% | 95.7% | 95.7% | 95.7% | 92.9% | 236 / 437 | 0.23 / 0.32 | 1.4% (1/70) | 2.9% (2/70) |
-| harbour @ 10 dB | 45 | 10.0% | 26.0% | 98.6% | 97.1% | 97.1% | 95.7% | 97.1% | 210 / 402 | 0.13 / 0.15 | 1.4% (1/70) | 1.4% (1/70) |
-| harbour @ 5 dB | 45 | 9.8% | 25.8% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 209 / 307 | 0.13 / 0.15 | 1.4% (1/70) | 1.4% (1/70) |
-| market @ 10 dB | 45 | 16.4% | 32.1% | 98.6% | 97.1% | 97.1% | 95.7% | 95.7% | 205 / 3617 | 0.13 / 0.16 | 1.4% (1/70) | 1.4% (1/70) |
-| market @ 5 dB | 45 | 21.4% | 35.8% | 97.1% | 92.9% | 92.9% | 94.3% | 91.4% | 217 / 383 | 0.12 / 0.16 | 1.4% (1/70) | 1.4% (1/70) |
-| traffic @ 10 dB | 45 | 10.3% | 25.9% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 205 / 10316 | 0.12 / 0.15 | 1.4% (1/70) | 2.9% (2/70) |
-| traffic @ 5 dB | 45 | 10.7% | 26.4% | 98.6% | 95.7% | 95.7% | 95.7% | 95.7% | 200 / 10055 | 0.13 / 0.15 | 1.4% (1/70) | 1.4% (1/70) |
-| ice_crusher @ 10 dB | 45 | 13.3% | 28.7% | 98.6% | 94.3% | 95.7% | 95.7% | 95.7% | 200 / 1398 | 0.12 / 0.15 | 0.0% (0/70) | 1.4% (1/70) |
-| ice_crusher @ 5 dB | 45 | 15.6% | 30.8% | 98.6% | 95.7% | 97.1% | 95.7% | 95.7% | 206 / 8327 | 0.12 / 0.16 | 0.0% (0/70) | 2.9% (2/70) |
+| clean (no noise) | 45 | 10.2% | 25.9% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 266 / 8322 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| harbour @ 10 dB | 45 | 11.8% | 27.5% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 214 / 297 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| harbour @ 5 dB | 45 | 12.1% | 27.8% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 218 / 341 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| market @ 10 dB | 45 | 12.8% | 28.3% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 208 / 306 | 0.14 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
+| market @ 5 dB | 45 | 17.6% | 32.2% | 94.3% | 91.4% | 91.4% | 91.4% | 87.1% | 209 / 340 | 0.10 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
+| traffic @ 10 dB | 45 | 11.1% | 26.7% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 223 / 361 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| traffic @ 5 dB | 45 | 11.4% | 27.2% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 202 / 406 | 0.14 / 0.16 | 0.0% (0/70) | 0.0% (0/70) |
+| ice_crusher @ 10 dB | 45 | 12.3% | 27.6% | 100.0% | 95.7% | 95.7% | 95.7% | 95.7% | 204 / 305 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| ice_crusher @ 5 dB | 45 | 13.6% | 28.8% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 217 / 328 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
 
 ### Roll-up by SNR (all four noise profiles)
 
 | Condition | n | WER (norm.) | WER (raw) | buyer | SKU | qty | unit | rate | STT P50 / P95 ms | firewall P50 / P95 ms | SFER gate ON | SFER gate OFF |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| all profiles @ 10 dB | 180 | 12.5% | 28.2% | 98.9% | 96.4% | 96.8% | 96.1% | 96.1% | 204 / 10085 | 0.12 / 0.15 | 1.1% (3/280) | 1.8% (5/280) |
-| all profiles @ 5 dB | 180 | 14.4% | 29.7% | 98.6% | 95.4% | 95.7% | 95.7% | 95.0% | 206 / 10269 | 0.12 / 0.16 | 1.1% (3/280) | 1.8% (5/280) |
-| **all noisy cells** | 360 | 13.5% | 28.9% | 98.8% | 95.9% | 96.2% | 95.9% | 95.5% | 206 / 10268 | 0.12 / 0.16 | 1.1% (6/560) | 1.8% (10/560) |
+| all profiles @ 10 dB | 180 | 12.0% | 27.5% | 100.0% | 96.8% | 96.8% | 96.8% | 96.1% | 212 / 317 | 0.14 / 0.17 | 0.0% (0/280) | 0.0% (0/280) |
+| all profiles @ 5 dB | 180 | 13.7% | 29.0% | 98.6% | 95.7% | 95.7% | 95.7% | 93.9% | 215 / 346 | 0.14 / 0.17 | 0.0% (0/280) | 0.0% (0/280) |
+| **all noisy cells** | 360 | 12.8% | 28.3% | 99.3% | 96.2% | 96.2% | 96.2% | 95.0% | 214 / 345 | 0.14 / 0.17 | 0.0% (0/560) | 0.0% (0/560) |
 
 ## Does the confidence gate help?
 
-**Yes, measurably.** Across all noisy cells the gate (τ = 0.82) cut silent financial errors from 10 to 6 of 560 attempted trades (1.8% → 1.1%).
+Without the gate there were **no** silent errors across 560 noisy trades, so this run cannot show a gate benefit (the pipeline made no confident mistakes to block).
 
 ### Threshold sensitivity (all noisy cells, in-sample)
 
@@ -44,14 +44,61 @@ Generated 2026-10-31 by `benchmark/run_eval.py` — 45 utterances × conditions 
 
 | τ | booked | silent errors | SFER | correct bookings |
 |---|---|---|---|---|
-| 0.5 | 419 | 10 | 1.8% | 409 |
-| 0.6 | 415 | 10 | 1.8% | 405 |
-| 0.7 | 407 | 6 | 1.1% | 401 |
-| 0.8 | 389 | 6 | 1.1% | 383 |
-| 0.82 (production) | 386 | 6 | 1.1% | 380 |
-| 0.9 | 356 | 2 | 0.4% | 354 |
-| 0.95 | 307 | 1 | 0.2% | 306 |
+| 0.5 | 413 | 0 | 0.0% | 413 |
+| 0.6 | 411 | 0 | 0.0% | 411 |
+| 0.7 | 401 | 0 | 0.0% | 401 |
+| 0.8 | 378 | 0 | 0.0% | 378 |
+| 0.82 (production) | 378 | 0 | 0.0% | 378 |
+| 0.9 | 365 | 0 | 0.0% | 365 |
+| 0.95 | 329 | 0 | 0.0% | 329 |
 
 ## Failure modes
 
-Across 360 noisy runs the weakest extracted entity was **rate** (95.5% correct) and the worst cell by normalized WER was **market @ 5 dB** (21.4%). 0 item(s) failed outright (API error or timeout) and are excluded from the averages. Silent errors that survived the gate (confident but wrong), spoken → heard: `multi_09` @ clean/clean dB: “செந்தில் சீஃபுட்ஸ்க்கு பதினைந்து கிலோ டைகர் பிரான் ஐநூற்று 60 ரேட்டு குமரனுக்கு 60 கிலோ டைகர் பிரான் எழுநூற்றி 40 ரேட்டு” → “செந்தில் சீஃபுட்ஸ் 15 கிலோ டைகர் பிரான் ஐநூற்றுக்கு 60 ரேட்டு குமரனுக்கு 60 கிலோ டைகர் பிரான் எழுநூற்றி 40 ரேட்டு”; `tanglish_02` @ harbour/10 dB: “Kumaran ku muppathi kg Prawn 500 ரேட்டு” → “குமரன்க்கு முப்பத்தி கார் ஜப்ரான் 500 ரேட்டு”; `tanglish_02` @ harbour/5 dB: “Kumaran ku muppathi kg Prawn 500 ரேட்டு” → “குமரன்க்கு முப்பத்தி கார் ஜப்ரான் 500 ரேட்டு”. Caveats: synthetic noise and a synthetic speaker bound how far these numbers transfer to a real harbour; the corpus uses two buyers and two SKUs, so entity accuracy is easier than it would be against a large catalog.
+Across 360 noisy runs the weakest extracted entity was **rate** (95.0% correct) and the worst cell by normalized WER was **market @ 5 dB** (17.6%). 0 item(s) failed outright (API error or timeout) and are excluded from the averages. No silent error survived the gate in this run. Caveats: synthetic noise and a synthetic speaker bound how far these numbers transfer to a real harbour; the corpus uses two buyers and two SKUs, so entity accuracy is easier than it would be against a large catalog.
+
+<!-- Hand-maintained sections below: run_eval.py keeps everything after this line. -->
+
+## Before/after: Phase 3C fixes on the same transcripts
+
+Both columns score the **same 405 cached Prisma transcripts** (recorded 2026-10-31 for the current corpus); only the scoring code differs, so every change below comes from the code, not from STT variance.
+
+- **pre-3C:** commit `f6870a5` (normalizer, matcher, catalog and scoring as of the Task 3 sweep), with only `benchmark/corpus.py` and the text-hash-keyed `benchmark/run_eval.py` taken from `e02f535` so it reads the same cached transcripts. Results: `benchmark/results_pre3c.csv`.
+- **current:** the case-ending strip (3C-1), SKU default unit with unit confidence (3C-2), and per-unit rate/quantity bands (3C-3). Results: `benchmark/results.csv`.
+
+Reproduce from the repo root (no API calls; both runs read `benchmark/.cache`):
+
+```bash
+REPO=$(pwd)
+git worktree add --detach /tmp/pre3c f6870a5
+git -C /tmp/pre3c checkout e02f535 -- benchmark/corpus.py benchmark/run_eval.py
+cd /tmp/pre3c && PYTHONPATH=src:. python benchmark/run_eval.py --analyze-only --conditions clean,harbour:10,harbour:5,market:10,market:5,traffic:10,traffic:5,ice_crusher:10,ice_crusher:5 --cache-dir "$REPO/benchmark/.cache" --out-dir /tmp/pre3c_out
+cd "$REPO" && python benchmark/compare_runs.py /tmp/pre3c_out/results.csv benchmark/results.csv --before-label pre-3C --after-label current --list-changes
+```
+
+| Condition | trades | silent errors, gate ON (pre-3C → current) | correct bookings, gate ON | booked, gate ON | silent errors, gate OFF | rate correct | unit correct |
+|---|---|---|---|---|---|---|---|
+| clean (no noise) | 70 | 1 → 0 | 48 → 49 | 49 | 2 → 0 | 95.7% → 97.1% | 94.3% → 97.1% |
+| harbour @ 10 dB | 70 | 1 → 0 | 48 | 49 → 48 | 1 → 0 | 95.7% | 94.3% → 97.1% |
+| harbour @ 5 dB | 70 | 1 → 0 | 48 | 49 → 48 | 1 → 0 | 95.7% | 94.3% → 97.1% |
+| ice_crusher @ 10 dB | 70 | 0 | 48 | 48 | 0 | 95.7% | 94.3% → 95.7% |
+| ice_crusher @ 5 dB | 70 | 0 | 47 | 47 | 1 → 0 | 97.1% | 94.3% → 97.1% |
+| market @ 10 dB | 70 | 1 → 0 | 49 | 50 → 49 | 1 → 0 | 97.1% | 94.3% → 97.1% |
+| market @ 5 dB | 70 | 0 | 42 | 42 | 0 | 87.1% | 88.6% → 91.4% |
+| traffic @ 10 dB | 70 | 1 → 0 | 47 → 48 | 48 | 2 → 0 | 94.3% → 95.7% | 94.3% → 97.1% |
+| traffic @ 5 dB | 70 | 1 → 0 | 48 | 49 → 48 | 1 → 0 | 95.7% | 94.3% → 97.1% |
+| **all noisy cells** | 560 | 5 → 0 | 377 → 378 | 382 → 378 | 7 → 0 | 94.8% → 95.0% | 93.6% → 96.2% |
+
+Every item whose gate-ON outcome changed:
+
+- `multi_09` @ clean/clean: silent errors 1 → 0, correct bookings 0 → 1 — heard “செந்தில் சீஃபுட்ஸ் 15 கிலோ டைகர் பிரான் ஐநூற்றுக்கு 60 ரேட்டு குமரனுக்கு 60 கிலோ டைகர் பிரான் எழுநூற்றி 40 ரேட்டு”
+- `multi_09` @ traffic/10: silent errors 1 → 0, correct bookings 0 → 1 — heard “செந்தில் சீபுத்க்கு 15 கிலோ டைகர் பிரான் ஐநூற்றுக்கு 60 ரேட்டு குமரனுக்கு 60 கிலோ டைகர் பிரான் எழுநூற்றி 40 ரேட்டு”
+- `tanglish_02` @ harbour/10: silent errors 1 → 0, correct bookings 0 → 0 — heard “குமரன்க்கு முப்பத்தி கார் ஜப்ரான் 500 ரேட்டு”
+- `tanglish_02` @ harbour/5: silent errors 1 → 0, correct bookings 0 → 0 — heard “குமரன்க்கு முப்பத்தி கார் ஜப்ரான் 500 ரேட்டு”
+- `tanglish_02` @ market/10: silent errors 1 → 0, correct bookings 0 → 0 — heard “குமரனுக்கு முப்பத்தி கார் ஜப்ரான் 500 ரேட்டு”
+- `tanglish_02` @ traffic/5: silent errors 1 → 0, correct bookings 0 → 0 — heard “குமரன்க்கு முப்பத்தி கார் ஜப்ரான் 500 ரேட்டு”
+
+Reading it:
+
+- With the gate ON, all 5 noisy silent errors and the 1 clean one are gone. Four were `tanglish_02` (spoken `kg` heard as `கார்`): pre-3C booked them as `box`; now the unit falls back to the prawn SKU's `kg` at 0.75 unit confidence, so they are held for confirmation rather than booked (booked −4, correct bookings unchanged). Two were `multi_09` (`ஐநூற்று 60` heard as `ஐநூற்றுக்கு 60`): the case-ending strip now reads 560, so they book correctly (+1 correct booking each).
+- With the gate OFF, silent errors also fell 7 → 0: the fixes removed the confident mistakes themselves rather than only hiding them behind the gate.
+- Consequence for the headline: this run has no silent errors with the gate on *or* off, so it cannot show a gate benefit (see "Does the confidence gate help?"). The threshold sweep now shows only the gate's cost: at τ = 0.82 it books 378 correct trades against 413 at τ = 0.5 on the same transcripts.
