@@ -46,6 +46,13 @@ TAMIL_NUMBER_WORDS: Final[Dict[str, int]] = {
     "arupadhu": 60, "ezhunootri": 700, "ainootri": 500, "anju": 5,
 }
 
+# Case endings Prisma sometimes glues onto an additive-prefix word, e.g. live multi_09 output
+# turned 'ஐநூற்று 60' into 'ஐநூற்றுக்கு 60'. Longest first so 'க்கும்' wins over 'க்கு'.
+# 'உக்கு' covers the rare spelling with an independent vowel instead of the 'ு' sign.
+TAMIL_PREFIX_CASE_ENDINGS: Final[Tuple[str, ...]] = (
+    "க்கும்", "உக்கு", "க்கு", "ஆல்", "இல்", "ஓட",
+)
+
 # Connector word used in "<multiplier-word> லட்சத்து <remainder>" lakh-scale phrases,
 # e.g. "ஒரு லட்சத்து இருபத்தி ஐயாயிரம்" (one lakh twenty five-thousand). Distinct from the
 # standalone "லட்சம்" (bare "one lakh") handled as an ordinary TAMIL_NUMBER_WORDS entry.
@@ -93,6 +100,22 @@ def strip_numeral_decoration(token: str) -> Optional[str]:
     return stripped if stripped.isdigit() else None
 
 
+def _additive_prefix_value(token: str) -> Optional[int]:
+    """
+    Returns the TAMIL_ADDITIVE_PREFIXES value for token, first as-is and then with one
+    case ending from TAMIL_PREFIX_CASE_ENDINGS stripped ('ஐநூற்றுக்கு' -> 500), or None.
+    """
+    value = TAMIL_ADDITIVE_PREFIXES.get(token)
+    if value is not None:
+        return value
+    for ending in TAMIL_PREFIX_CASE_ENDINGS:
+        if token.endswith(ending):
+            value = TAMIL_ADDITIVE_PREFIXES.get(token[: -len(ending)])
+            if value is not None:
+                return value
+    return None
+
+
 def _fold_connective_tens_with_thousands(token: str, next_tok: str) -> Optional[int]:
     """
     Returns (tens + N) * 1000 for "<tens>த்தி <N-thousand word>" (e.g. 'இருபத்தி ஐயாயிரம்'
@@ -131,8 +154,9 @@ def _sum_trailing_number_words(tokens: List[str], start_idx: int) -> Tuple[int, 
     while idx < total:
         token = tokens[idx]
 
-        if token in TAMIL_ADDITIVE_PREFIXES and idx + 1 < total:
-            base_val = TAMIL_ADDITIVE_PREFIXES[token]
+        prefix_val = _additive_prefix_value(token)
+        if prefix_val is not None and idx + 1 < total:
+            base_val = prefix_val
             next_tok = tokens[idx + 1]
             bare = strip_numeral_decoration(next_tok)
             if bare is not None:
@@ -213,8 +237,10 @@ def normalize_hybrid_tamil_numerals(utterance: str) -> str:
             continue
 
         # Hybrid: "<hundred/thousand-prefix word> <digit | ₹/comma-decorated digit | word>"
-        if token in TAMIL_ADDITIVE_PREFIXES and idx + 1 < total:
-            base_val = TAMIL_ADDITIVE_PREFIXES[token]
+        # (a case ending glued onto the prefix word is tolerated: 'ஐநூற்றுக்கு 60' -> '560')
+        prefix_val = _additive_prefix_value(token)
+        if prefix_val is not None and idx + 1 < total:
+            base_val = prefix_val
             next_tok = tokens[idx + 1]
             bare = strip_numeral_decoration(next_tok)
             if bare is not None:

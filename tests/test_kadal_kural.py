@@ -66,6 +66,22 @@ def test_normalize_lakh_remainder_from_live_probe() -> None:
     assert normalize_hybrid_tamil_numerals(raw) == "125000 ரூபாய்"
 
 
+# Clean-condition Prisma transcript for multi_09, copied verbatim from benchmark/results.csv.
+# Prisma glued a dative case ending onto the additive prefix ('ஐநூற்று 60' -> 'ஐநூற்றுக்கு 60'),
+# which used to leave the first rate parsed as 60 instead of 560.
+MULTI_09_CLEAN_TRANSCRIPT = (
+    "செந்தில் சீஃபுட்ஸ் 15 கிலோ டைகர் பிரான் ஐநூற்றுக்கு 60 ரேட்டு "
+    "குமரனுக்கு 60 கிலோ டைகர் பிரான் எழுநூற்றி 40 ரேட்டு"
+)
+
+
+def test_normalize_additive_prefix_with_case_ending_multi_09() -> None:
+    assert normalize_hybrid_tamil_numerals(MULTI_09_CLEAN_TRANSCRIPT) == (
+        "செந்தில் சீஃபுட்ஸ் 15 கிலோ டைகர் பிரான் 560 ரேட்டு "
+        "குமரனுக்கு 60 கிலோ டைகர் பிரான் 740 ரேட்டு"
+    )
+
+
 def test_strip_tamil_dative_suffixes() -> None:
     assert strip_tamil_dative_suffix("செந்தில் சீஃபுட்ஸ்க்கு") == "செந்தில் சீஃபுட்ஸ்"
     assert strip_tamil_dative_suffix("குமரனுக்கு") == "குமரன்"
