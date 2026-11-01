@@ -40,7 +40,7 @@ from benchmark.run_eval import (  # noqa: E402
     sample_corpus,
 )
 from kadal_kural.config import AppSettings  # noqa: E402
-from kadal_kural.infrastructure.gnani_client import GnaniArthaSpeechClient  # noqa: E402
+from kadal_kural.infrastructure.gnani_client import GnaniArthaSpeechClient, GnaniProtocolError  # noqa: E402
 
 logger = logging.getLogger("vad_false_detections")
 SNR_DB = 5.0
@@ -70,6 +70,8 @@ async def one_stream(threshold: float, pcm: bytes) -> Dict[str, object]:
         )
     except asyncio.TimeoutError:  # a speech_start Prisma never transcribed
         return {"speech_starts": None, "open_without_transcript": True, "texts": texts}
+    except GnaniProtocolError as exc:  # a server fault says nothing about the threshold
+        return {"speech_starts": None, "open_without_transcript": False, "texts": texts, "error": str(exc)}
     starts = sum(e.event_type == "speech_start" for e in telemetry.events)
     return {"speech_starts": starts, "open_without_transcript": False, "texts": texts}
 
@@ -99,6 +101,9 @@ async def main_async(args: argparse.Namespace) -> int:
         with args.out.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
         tally = summary[threshold]
+        if "error" in result:
+            tally["server_errors"] += 1
+            return
         tally["streams"] += 1
         tally["detected"] += bool(result["open_without_transcript"] or result["speech_starts"])
         tally["false_transcripts"] += bool(result["texts"])

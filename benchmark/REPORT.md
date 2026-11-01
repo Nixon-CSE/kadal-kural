@@ -158,3 +158,35 @@ Timbre first byte (request → first audio byte) from the same trials: P50 375 /
 ## Known limitations
 
 - **In-range quantity digit errors are not caught pre-booking.** A dropped or added quantity digit that stays inside the 1–1,000 kg band (50 → 5 kg, 5 → 50 kg) looks like a normal trade, so the gate books it. They are mitigated, after booking, by the spoken read-back (the reply states quantity, unit, product and amount) and voice undo (reverses the last booked trade), which rely on the trader noticing. A check against each buyer's order history is deferred. `tests/test_gate_fault_injection.py` keeps both cases as strict expected failures, so the suite flags any change in this behavior.
+
+## Speech-start clipping: VAD threshold sweep
+
+Prompted by a live mic test where `குமரனுக்கு` came back as `அமரனுக்கு`. **Lower thresholds showed no benefit on these recordings, and end-of-speech timeouts rise as the threshold falls, so the recommendation is to keep 0.78.** No default was changed. Recorded live 2026-11-01 (0.78 re-uses the 2026-10-31 recordings); same 225 items for each threshold: clean plus all four profiles at 5 dB. Results: `benchmark/vad_sweep/`; re-score any row with `run_eval.py --analyze-only --vad-threshold T --conditions clean,harbour:5,market:5,traffic:5,ice_crusher:5`.
+
+| vad_threshold | buyer correct, clean | buyer correct, 5 dB | first word exact, clean | first word exact, 5 dB | no-transcript timeouts, first pass | items still failed after a re-run | first `speech_start` after stream start, P50 | false detections on speech-free audio |
+|---|---|---|---|---|---|---|---|---|
+| 0.78 (default) | 100.0% | 100.0% | 100.0% | 91.5% | 0 | 0 | not recorded for this set | 0 of 29 |
+| 0.7 | 100.0% | 99.6% | 100.0% | 90.9% | 0 | 0 | 700 ms | 0 of 30 |
+| 0.6 | 100.0% | 99.6% | 100.0% | 91.4% | 1 | 2 | 693 ms | 0 of 27 |
+| 0.5 | 100.0% | 99.6% | 100.0% | 92.4% | 5 | 6 | 694 ms | 0 of 27 |
+
+Accuracy covers the items that produced a transcript. *First word exact* excludes the Tanglish items, whose spelling legitimately differs. *False detections* counts any `speech_start` or transcript on digital silence or a 5 dB noise bed with the speech subtracted; streams lost to a Prisma server fault aren't counted. Of the items still failing, all but one (a timeout at 0.5) are Prisma server faults rather than threshold effects, so the correct-bookings gap they leave (237, 236, 234, 228) isn't a fair comparison and isn't used here.
+
+Limits of this evidence:
+
+- **The clipping did not reproduce here.** Every threshold, including 0.78, gets the first word of every clean item right. These are Timbre recordings with a clean onset and a 300 ms lead-in, so this sweep shows no gain from lowering the threshold; it cannot show lowering wouldn't help a real voice on a real mic. That needs the raw mic audio of a clipped utterance.
+- **The header is honoured only at extremes.** In a mixed-order test (`extreme_thresholds.jsonl`: 20 streams each at 0.05 and 0.78, 16 at 0.99), 0.05 failed 16 of 20 streams, mostly with no transcript within 15 s, while 0.78 failed none and 0.99 failed 1 and still detected speech at normal timing. So Prisma reads the value, but across 0.5–0.99 speech is detected at about the same time.
+- **Prisma was unstable during this run.** 40 of the 46 first-pass failures were Prisma's own `A child process terminated abruptly` frames, none of which appeared in the earlier 306-call recording, and stalls reached 10 of 20 streams at 0.78 in the mixed-order test (3% in the benchmark). Those failures are not attributed to any threshold; the table counts only what survived the re-run.
+
+**Browser client:** with the real page code, a stubbed mic and a fake Prisma, frames go out at a steady 64 ms (1,024 bytes, max gap 64.3 ms over 38 frames), so nothing is dropped once capture runs, and a server test confirms bytes reach Prisma intact and in order. Frames are discarded only while the WebSocket isn't open. There is one real gap: "Speak now" appears when Prisma connects, but capture starts only once the mic is up (93 ms later with an instant stub; a real device or permission prompt adds an unmeasured amount). That can only clip the first words after pressing Start, not a later utterance. Chrome's echo cancellation and default auto gain could also soften an onset; a stub mic can't test that.
+
+## Assembler: reply latency before and after
+
+`to_first_audio_ms` from the gateway's JSON timing lines, measured with `scripts/measure_live_path.py` (real gateway, Prisma and Timbre; cached speech streamed over `/ws/live-audio` like the browser; 12 utterances; `benchmark/live_path_timing.jsonl`). The clock starts when the first STT segment arrives, so Prisma's own latency is not included.
+
+| assembler | n | `to_first_audio_ms` P50 | P95 | min | max | `assemble` span P50 |
+|---|---|---|---|---|---|---|
+| before: fixed 1.5 s wait | 12 | 1,828 ms | 2,143 ms | 1,786 ms | 2,463 ms | 1,501.7 ms |
+| after: commit complete trades at once | 12 | 392 ms | 508 ms | 301 ms | 528 ms | 1.3 ms |
+
+What this costs: text that isn't a complete trade now waits 2.5 s instead of 1.5 s, including barge-in overrides and voice undo, and that value is a judgement call with no live pause data behind it. Every benchmark stream arrived as one Prisma segment, so these numbers don't exercise a trader pausing after a rate word mid-utterance: the next trade would become its own turn, and its arrival would barge in on the first reply.
