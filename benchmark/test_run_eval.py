@@ -302,6 +302,25 @@ def test_failure_modes_count_prisma_stt_stalls(scorer: Scorer) -> None:
     assert "1 item(s) (50.0%, clean and noisy alike) had a Prisma-reported STT latency of 10.3–10.3 s" in text
 
 
+def test_vad_overrides_change_the_settings_and_the_recording_cache_key(settings: AppSettings, tmp_path: Path) -> None:
+    from benchmark.run_eval import WorkItem, parse_args, settings_from_args
+    from pydantic import ValidationError
+
+    args = parse_args(["--vad-threshold", "0.6", "--min-speech-ms", "120"])
+    overridden = settings_from_args(args)
+    assert (overridden.vad_threshold, overridden.min_speech_ms) == (0.6, 120)
+    default = settings_from_args(parse_args([]))
+    assert (default.vad_threshold, default.min_speech_ms) == (AppSettings().vad_threshold, AppSettings().min_speech_ms)
+    with pytest.raises(ValidationError):
+        settings_from_args(parse_args(["--vad-threshold", "1.5"]))
+
+    item = WorkItem(_utt("single_01"), "harbour", 5.0)
+    default_cache = DiskCache(tmp_path / "c", default, 300, 860)
+    default_cache.save_transcript(item, TranscriptOutcome("x", 1.0, 1))
+    assert DiskCache(tmp_path / "c", overridden, 300, 860).load_transcript(item) is None  # never reused across values
+    assert default_cache.load_transcript(item) is not None
+
+
 def test_regenerated_report_keeps_the_hand_maintained_tail() -> None:
     from benchmark.run_eval import MANUAL_SECTIONS_MARKER, keep_manual_sections
 

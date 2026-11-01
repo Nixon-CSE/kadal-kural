@@ -821,11 +821,23 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--out-dir", type=Path, default=_REPO_ROOT / "benchmark")
     p.add_argument("--analyze-only", action="store_true", help="never call the API; score cached transcripts")
     p.add_argument("--yes", action="store_true", help="confirm a large live run")
+    p.add_argument("--vad-threshold", type=float, help="override vad_threshold (recordings are cached per value)")
+    p.add_argument("--min-speech-ms", type=int, help="override min_speech_ms (recordings are cached per value)")
     return p.parse_args(argv)
 
 
+def settings_from_args(args: argparse.Namespace) -> AppSettings:
+    """AppSettings (env/.env) with any VAD override from the command line applied and validated."""
+    overrides: Dict[str, Any] = {}
+    if args.vad_threshold is not None:
+        overrides["vad_threshold"] = args.vad_threshold
+    if args.min_speech_ms is not None:
+        overrides["min_speech_ms"] = args.min_speech_ms
+    return AppSettings(**overrides)
+
+
 async def main_async(args: argparse.Namespace) -> int:
-    settings = AppSettings()
+    settings = settings_from_args(args)
     corpus = sample_corpus(build_corpus(), args.limit)
     items = filter_conditions(
         build_work_items(corpus, args.profiles, args.snrs, not args.no_clean), args.conditions
@@ -866,7 +878,8 @@ async def main_async(args: argparse.Namespace) -> int:
         f"{'' if args.no_clean else ' + clean baseline'}"
     )
     scope = (
-        f"{len(corpus)} utterances × {grid} = {len(items)} items"
+        f"{len(corpus)} utterances × {grid} = {len(items)} items, vad_threshold {settings.vad_threshold}, "
+        f"min_speech_ms {settings.min_speech_ms}"
         f"{' (SAMPLE RUN — not the full sweep)' if args.limit else ''}"
     )
     report = render_report(rows, sweep, settings, {"date": date.today().isoformat(), "scope": scope})
