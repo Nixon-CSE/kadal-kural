@@ -1,6 +1,6 @@
 # Kadal Kural — Noise & Silent-Error Benchmark
 
-Generated 2026-10-31 by `benchmark/run_eval.py` — 45 utterances × conditions [clean,harbour:10,harbour:5,market:10,market:5,traffic:10,traffic:5,ice_crusher:10,ice_crusher:5] = 405 items.
+Generated 2026-11-01 by `benchmark/run_eval.py` — 45 utterances × conditions [clean,harbour:10,harbour:5,market:10,market:5,traffic:10,traffic:5,ice_crusher:10,ice_crusher:5] = 405 items.
 
 ## Method (read this before the numbers)
 
@@ -16,23 +16,23 @@ Generated 2026-10-31 by `benchmark/run_eval.py` — 45 utterances × conditions 
 
 | Condition | n | WER (norm.) | WER (raw) | buyer | SKU | qty | unit | rate | STT P50 / P95 ms | firewall P50 / P95 ms | SFER gate ON | SFER gate OFF |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| clean (no noise) | 45 | 10.2% | 25.9% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 266 / 8322 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| harbour @ 10 dB | 45 | 11.8% | 27.5% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 214 / 297 | 0.15 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| harbour @ 5 dB | 45 | 12.1% | 27.8% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 218 / 341 | 0.15 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
-| market @ 10 dB | 45 | 12.8% | 28.3% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 208 / 306 | 0.15 / 0.19 | 0.0% (0/70) | 0.0% (0/70) |
-| market @ 5 dB | 45 | 17.6% | 32.2% | 94.3% | 91.4% | 91.4% | 91.4% | 87.1% | 209 / 340 | 0.11 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
-| traffic @ 10 dB | 45 | 11.1% | 26.7% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 223 / 361 | 0.15 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
-| traffic @ 5 dB | 45 | 11.4% | 27.2% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 202 / 406 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
-| ice_crusher @ 10 dB | 45 | 12.3% | 27.6% | 100.0% | 95.7% | 95.7% | 95.7% | 95.7% | 204 / 305 | 0.14 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
-| ice_crusher @ 5 dB | 45 | 13.6% | 28.8% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 217 / 328 | 0.14 / 0.17 | 0.0% (0/70) | 0.0% (0/70) |
+| clean (no noise) | 45 | 10.2% | 25.9% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 266 / 8322 | 0.17 / 0.19 | 0.0% (0/70) | 0.0% (0/70) |
+| harbour @ 10 dB | 45 | 11.8% | 27.5% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 214 / 297 | 0.15 / 0.19 | 0.0% (0/70) | 0.0% (0/70) |
+| harbour @ 5 dB | 45 | 12.1% | 27.8% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 218 / 341 | 0.15 / 0.19 | 0.0% (0/70) | 0.0% (0/70) |
+| market @ 10 dB | 45 | 12.8% | 28.3% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 208 / 306 | 0.16 / 0.19 | 0.0% (0/70) | 0.0% (0/70) |
+| market @ 5 dB | 45 | 17.6% | 32.2% | 94.3% | 91.4% | 91.4% | 91.4% | 87.1% | 209 / 340 | 0.12 / 0.19 | 0.0% (0/70) | 0.0% (0/70) |
+| traffic @ 10 dB | 45 | 11.1% | 26.7% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 223 / 361 | 0.15 / 0.19 | 0.0% (0/70) | 0.0% (0/70) |
+| traffic @ 5 dB | 45 | 11.4% | 27.2% | 100.0% | 97.1% | 97.1% | 97.1% | 95.7% | 202 / 406 | 0.15 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
+| ice_crusher @ 10 dB | 45 | 12.3% | 27.6% | 100.0% | 95.7% | 95.7% | 95.7% | 95.7% | 204 / 305 | 0.15 / 0.21 | 0.0% (0/70) | 0.0% (0/70) |
+| ice_crusher @ 5 dB | 45 | 13.6% | 28.8% | 100.0% | 97.1% | 97.1% | 97.1% | 97.1% | 217 / 328 | 0.16 / 0.18 | 0.0% (0/70) | 0.0% (0/70) |
 
 ### Roll-up by SNR (all four noise profiles)
 
 | Condition | n | WER (norm.) | WER (raw) | buyer | SKU | qty | unit | rate | STT P50 / P95 ms | firewall P50 / P95 ms | SFER gate ON | SFER gate OFF |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| all profiles @ 10 dB | 180 | 12.0% | 27.5% | 100.0% | 96.8% | 96.8% | 96.8% | 96.1% | 212 / 317 | 0.15 / 0.18 | 0.0% (0/280) | 0.0% (0/280) |
-| all profiles @ 5 dB | 180 | 13.7% | 29.0% | 98.6% | 95.7% | 95.7% | 95.7% | 93.9% | 215 / 346 | 0.14 / 0.18 | 0.0% (0/280) | 0.0% (0/280) |
-| **all noisy cells** | 360 | 12.8% | 28.3% | 99.3% | 96.2% | 96.2% | 96.2% | 95.0% | 214 / 345 | 0.14 / 0.18 | 0.0% (0/560) | 0.0% (0/560) |
+| all profiles @ 10 dB | 180 | 12.0% | 27.5% | 100.0% | 96.8% | 96.8% | 96.8% | 96.1% | 212 / 317 | 0.15 / 0.20 | 0.0% (0/280) | 0.0% (0/280) |
+| all profiles @ 5 dB | 180 | 13.7% | 29.0% | 98.6% | 95.7% | 95.7% | 95.7% | 93.9% | 215 / 346 | 0.15 / 0.19 | 0.0% (0/280) | 0.0% (0/280) |
+| **all noisy cells** | 360 | 12.8% | 28.3% | 99.3% | 96.2% | 96.2% | 96.2% | 95.0% | 214 / 345 | 0.15 / 0.19 | 0.0% (0/560) | 0.0% (0/560) |
 
 ## Latency by pipeline stage
 
@@ -43,9 +43,9 @@ Every scored item, all conditions. *Client-observed* STT and *STT connect* exist
 | STT, Prisma-reported | the `latency` field Prisma attaches to each transcript (mean per utterance) | 405 | 216 | 350 |
 | STT, client-observed | last audio frame sent → last final transcript received | 0 | — | — |
 | STT connect | WebSocket open + handshake frame | 0 | — | — |
-| normalize | numeral normalizer | 405 | 0.013 | 0.015 |
-| match | clause split + buyer/SKU/unit/amount matching | 405 | 0.043 | 0.065 |
-| decide | confidence gate + credit check + SQLite ledger write, every intent | 405 | 0.073 | 0.087 |
+| normalize | numeral normalizer | 405 | 0.013 | 0.016 |
+| match | clause split + buyer/SKU/unit/amount matching | 405 | 0.047 | 0.071 |
+| decide | confidence gate + credit check + SQLite ledger write, every intent | 405 | 0.075 | 0.091 |
 
 ## Does the confidence gate help?
 
@@ -57,13 +57,13 @@ Without the gate there were **no** silent errors across 560 noisy trades, so thi
 
 | τ | booked | silent errors | SFER | correct bookings |
 |---|---|---|---|---|
-| 0.5 | 413 | 0 | 0.0% | 413 |
-| 0.6 | 411 | 0 | 0.0% | 411 |
-| 0.7 | 401 | 0 | 0.0% | 401 |
-| 0.8 | 378 | 0 | 0.0% | 378 |
-| 0.82 (production) | 378 | 0 | 0.0% | 378 |
-| 0.9 | 365 | 0 | 0.0% | 365 |
-| 0.95 | 329 | 0 | 0.0% | 329 |
+| 0.5 | 409 | 0 | 0.0% | 409 |
+| 0.6 | 407 | 0 | 0.0% | 407 |
+| 0.7 | 397 | 0 | 0.0% | 397 |
+| 0.8 | 374 | 0 | 0.0% | 374 |
+| 0.82 (production) | 374 | 0 | 0.0% | 374 |
+| 0.9 | 361 | 0 | 0.0% | 361 |
+| 0.95 | 325 | 0 | 0.0% | 325 |
 
 ## Failure modes
 
@@ -96,15 +96,19 @@ cd "$REPO" && python benchmark/compare_runs.py /tmp/pre3c_out/results.csv benchm
 | ice_crusher @ 10 dB | 70 | 0 | 48 | 48 | 0 | 95.7% | 94.3% → 95.7% |
 | ice_crusher @ 5 dB | 70 | 0 | 47 | 47 | 1 → 0 | 97.1% | 94.3% → 97.1% |
 | market @ 10 dB | 70 | 1 → 0 | 49 | 50 → 49 | 1 → 0 | 97.1% | 94.3% → 97.1% |
-| market @ 5 dB | 70 | 0 | 42 | 42 | 0 | 87.1% | 88.6% → 91.4% |
+| market @ 5 dB | 70 | 0 | 42 → 38 | 42 → 38 | 0 | 87.1% | 88.6% → 91.4% |
 | traffic @ 10 dB | 70 | 1 → 0 | 47 → 48 | 48 | 2 → 0 | 94.3% → 95.7% | 94.3% → 97.1% |
 | traffic @ 5 dB | 70 | 1 → 0 | 48 | 49 → 48 | 1 → 0 | 95.7% | 94.3% → 97.1% |
-| **all noisy cells** | 560 | 5 → 0 | 377 → 378 | 382 → 378 | 7 → 0 | 94.8% → 95.0% | 93.6% → 96.2% |
+| **all noisy cells** | 560 | 5 → 0 | 377 → 374 | 382 → 374 | 7 → 0 | 94.8% → 95.0% | 93.6% → 96.2% |
 
 Every item whose gate-ON outcome changed:
 
+- `multi_02` @ market/5: silent errors 0 → 0, correct bookings 1 → 0 — heard “செந்திலுக்கு 10 கிலோ வஞ்சரம் 800 வேட்டு குமரனுக்கு 10 கிலோ வஞ்சரம் 800 வேட்டு”
 - `multi_09` @ clean/clean: silent errors 1 → 0, correct bookings 0 → 1 — heard “செந்தில் சீஃபுட்ஸ் 15 கிலோ டைகர் பிரான் ஐநூற்றுக்கு 60 ரேட்டு குமரனுக்கு 60 கிலோ டைகர் பிரான் எழுநூற்றி 40 ரேட்டு”
 - `multi_09` @ traffic/10: silent errors 1 → 0, correct bookings 0 → 1 — heard “செந்தில் சீபுத்க்கு 15 கிலோ டைகர் பிரான் ஐநூற்றுக்கு 60 ரேட்டு குமரனுக்கு 60 கிலோ டைகர் பிரான் எழுநூற்றி 40 ரேட்டு”
+- `multi_13` @ market/5: silent errors 0 → 0, correct bookings 1 → 0 — heard “குமரனுக்கு 40 கிலோ எக்ஸ்போர்ட் வஞ்சரம் எழுநூற்றி 40 ரேக்கு செந்திலுக்கு 30 கிலோ டைகர் பிரான் நானூற்றி 50 ரேக்கு”
+- `multi_20` @ market/5: silent errors 0 → 0, correct bookings 1 → 0 — heard “செந்திலுக்கு 30 கிலோ வஞ்சரம் 600 வேட்டு செந்திலி சிவக்கு 40 கிலோ வஞ்சரம் 600 வேட்டு”
+- `multi_21` @ market/5: silent errors 0 → 0, correct bookings 1 → 0 — heard “குமரனுக்கு 20 கிலோ டைகர் பிரான் 350 ரைட்டு குமரனுக்கு 10 கிலோ டைகர் பிரான் 500 ரைட்டு”
 - `tanglish_02` @ harbour/10: silent errors 1 → 0, correct bookings 0 → 0 — heard “குமரன்க்கு முப்பத்தி கார் ஜப்ரான் 500 ரேட்டு”
 - `tanglish_02` @ harbour/5: silent errors 1 → 0, correct bookings 0 → 0 — heard “குமரன்க்கு முப்பத்தி கார் ஜப்ரான் 500 ரேட்டு”
 - `tanglish_02` @ market/10: silent errors 1 → 0, correct bookings 0 → 0 — heard “குமரனுக்கு முப்பத்தி கார் ஜப்ரான் 500 ரேட்டு”
@@ -112,9 +116,10 @@ Every item whose gate-ON outcome changed:
 
 Reading it:
 
-- With the gate ON, all 5 noisy silent errors and the 1 clean one are gone. Four were `tanglish_02` (spoken `kg` heard as `கார்`): pre-3C booked them as `box`; now the unit falls back to the prawn SKU's `kg` at 0.75 unit confidence, so they are held for confirmation rather than booked (booked −4, correct bookings unchanged). Two were `multi_09` (`ஐநூற்று 60` heard as `ஐநூற்றுக்கு 60`): the case-ending strip now reads 560, so they book correctly (+1 correct booking each).
+- With the gate ON, all 5 noisy silent errors and the 1 clean one are gone. Four were `tanglish_02` (spoken `kg` heard as `கார்`): pre-3C booked them as `box`; now the unit falls back to the prawn SKU's `kg` at 0.75 unit confidence, so they are held for confirmation rather than booked. Two were `multi_09` (`ஐநூற்று 60` heard as `ஐநூற்றுக்கு 60`): the case-ending strip now reads 560, so they book correctly (+1 correct booking each).
+- The four `market @ 5 dB` items that lose a correct booking (`multi_02`, `multi_13`, `multi_20`, `multi_21`) are merged clauses: Prisma misheard the `ரேட்டு` terminator, so two trades reached the parser as one. Pre-3C the first trade booked and the second silently vanished. The leftover-number check now holds the whole clause for clarification.
 - With the gate OFF, silent errors also fell 7 → 0: the fixes removed the confident mistakes themselves rather than only hiding them behind the gate.
-- Consequence for the headline: this run has no silent errors with the gate on *or* off, so it cannot show a gate benefit (see "Does the confidence gate help?"). The threshold sweep now shows only the gate's cost: at τ = 0.82 it books 378 correct trades against 413 at τ = 0.5 on the same transcripts.
+- Consequence for the headline: this run has no silent errors with the gate on *or* off, so it cannot show a gate benefit (see "Does the confidence gate help?"). The threshold sweep shows only the gate's cost: at τ = 0.82 it books 374 correct trades against 409 at τ = 0.5 on the same transcripts.
 
 ## STT latency spikes (Prisma-side stalls)
 

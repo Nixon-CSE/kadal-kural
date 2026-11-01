@@ -8,8 +8,8 @@ What the gate does with each corruption (run ``pytest -rxX`` to list the misses)
 
     caught   rate digit dropped/added (560 -> 56, 50, 5600, 5660): outside the rate band
     caught   suffix the normalizer can't strip (ஐநூற்றுல / ஐநூற்றே / ஐநூறுக்கு 60 -> rate 60)
+    caught   hybrid split (ஐநூற்று 60 heard as 500 60): the 60 is a number left over after the rate
     MISSED   quantity digit dropped/added (50 -> 5 kg, 5 -> 50 kg): still inside 1-1,000 kg
-    MISSED   hybrid split (ஐநூற்று 60 heard as 500 60 -> rate 500): still inside the band
     n/a      suffix -க்கு / -க்கும் (ஐநூற்றுக்கு 60): the normalizer recovers 560, books correctly
     n/a      repeated rate (560 560): the extra number is ignored, books correctly
     blocked  repeated quantity (5 5 கிலோ): no SKU resolves, held even with the gate off
@@ -24,7 +24,7 @@ from typing import Callable, List
 
 import pytest
 
-from kadal_kural.config import AppSettings
+from kadal_kural.config import LEFTOVER_NUMBER_CONFIDENCE, AppSettings
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.models import CreditGateDecision, LedgerEventStatus
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
@@ -114,7 +114,6 @@ GATE_CASES = [
     pytest.param(
         Corruption("hybrid split: ஐநூற்று 60 -> 500 60", HYBRID_RATE, replace_token("ஐநூற்று", "500")),
         id="hybrid-split",
-        marks=_missed("the rate reads as 500, inside the ₹300-1,500/kg prawn band; the stray 60 is ignored"),
     ),
 ]
 
@@ -158,3 +157,26 @@ def test_thousandfold_quantity_is_held_by_the_gate_and_by_the_credit_limit_witho
     (ungated,) = _decide(tmp_path / "off", transcript, gate=False)
     assert gated.status == LedgerEventStatus.PENDING_CLARIFICATION
     assert ungated.status == LedgerEventStatus.CREDIT_HOLD_BREACH
+
+
+# Real Prisma output at market @ 5 dB: the ரேட்டு terminator was misheard, so two trades reached
+# the parser as one clause. Before the leftover-number check the first trade booked and the
+# second vanished. The whole clause must be held, with nothing booked.
+MERGED_CLAUSES = {
+    "multi_02": "செந்திலுக்கு 10 கிலோ வஞ்சரம் 800 வேட்டு குமரனுக்கு 10 கிலோ வஞ்சரம் 800 வேட்டு",
+    "multi_13": "குமரனுக்கு 40 கிலோ எக்ஸ்போர்ட் வஞ்சரம் எழுநூற்றி 40 ரேக்கு செந்திலுக்கு 30 கிலோ டைகர் பிரான் நானூற்றி 50 ரேக்கு",
+    "multi_20": "செந்திலுக்கு 30 கிலோ வஞ்சரம் 600 வேட்டு செந்திலி சிவக்கு 40 கிலோ வஞ்சரம் 600 வேட்டு",
+    "multi_21": "குமரனுக்கு 20 கிலோ டைகர் பிரான் 350 ரைட்டு குமரனுக்கு 10 கிலோ டைகர் பிரான் 500 ரைட்டு",
+}
+
+
+@pytest.mark.parametrize("transcript", MERGED_CLAUSES.values(), ids=MERGED_CLAUSES.keys())
+def test_merged_clause_is_held_not_half_booked(transcript: str, tmp_path: Path) -> None:
+    (decision,) = _decide(tmp_path, transcript, gate=True)
+    assert decision.status == LedgerEventStatus.PENDING_CLARIFICATION
+    assert decision.confidence == LEFTOVER_NUMBER_CONFIDENCE
+
+
+def test_exact_repeat_of_the_rate_is_not_a_leftover(tmp_path: Path) -> None:
+    (decision,) = _decide(tmp_path, double("560")(DIGIT_RATE), gate=True)
+    assert decision.status == LedgerEventStatus.BOOKED and decision.confidence > LEFTOVER_NUMBER_CONFIDENCE

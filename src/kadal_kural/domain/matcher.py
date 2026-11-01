@@ -12,6 +12,7 @@ from kadal_kural.config import (
     AMOUNT_IN_RANGE_CONFIDENCE,
     AMOUNT_OUT_OF_RANGE_SLOPE,
     DEFAULT_ASSUMED_UNIT_CONFIDENCE,
+    LEFTOVER_NUMBER_CONFIDENCE,
     NO_SKU_FALLBACK_UNIT,
     UNPRICED_UNIT_RATE_CONFIDENCE,
 )
@@ -215,7 +216,10 @@ class BilingualCatalogMatcher:
                 rate_conf = UNPRICED_UNIT_RATE_CONFIDENCE  # e.g. Vanjaram quoted per box
             else:
                 rate_conf = range_confidence(rate_inr, sku.rate_range_inr[unit])
-            overall_conf = round(min(buyer_conf, sku_conf, unit_conf, qty_conf, rate_conf), 3)
+            overall_conf = min(buyer_conf, sku_conf, unit_conf, qty_conf, rate_conf)
+            if any(value != rate_inr for _, value in numeric_positions[2:]):
+                overall_conf = min(overall_conf, LEFTOVER_NUMBER_CONFIDENCE)
+            overall_conf = round(overall_conf, 3)
 
             intents.append(
                 TradeIntent(

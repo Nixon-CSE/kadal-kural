@@ -44,6 +44,13 @@ AMOUNT_CONFIDENCE_FLOOR: float = 0.0
 # trade to PENDING_CLARIFICATION instead of booking an unchecked per-box price.
 UNPRICED_UNIT_RATE_CONFIDENCE: float = 0.4
 
+# Clause confidence when a number is left over after quantity and rate (an exact repeat of the
+# rate is exempt). The extra number means the clause was misheard: a split hundreds word
+# ('500 60' for 'ஐநூற்று 60') or two trades merged into one clause. Which amount was meant is
+# a guess, so this sits below the lowest confidence_threshold AppSettings allows (0.50) and the
+# whole clause goes to PENDING_CLARIFICATION instead of booking part of it.
+LEFTOVER_NUMBER_CONFIDENCE: float = 0.4
+
 # Unit recorded when no unit word was heard and no SKU matched to supply a default_unit.
 # Such a trade already fails the gate on SKU confidence; this only fills TradeIntent.unit.
 NO_SKU_FALLBACK_UNIT: str = "box"
