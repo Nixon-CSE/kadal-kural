@@ -51,6 +51,12 @@ UNPRICED_UNIT_RATE_CONFIDENCE: float = 0.4
 # whole clause goes to PENDING_CLARIFICATION instead of booking part of it.
 LEFTOVER_NUMBER_CONFIDENCE: float = 0.4
 
+# A dative phrase mid-clause that isn't an exact buyer alias still starts a new clause if the
+# buyer resolver scores it at least this high: the default gate, the same bar the phrase must
+# clear as the new clause's buyer. So a misheard name the gate would accept can separate two
+# trades ('செந்திலி சிவக்கு' scores 0.84), and one it would reject cannot.
+BUYER_BOUNDARY_MIN_CONFIDENCE: float = 0.82
+
 # Unit recorded when no unit word was heard and no SKU matched to supply a default_unit.
 # Such a trade already fails the gate on SKU confidence; this only fills TradeIntent.unit.
 NO_SKU_FALLBACK_UNIT: str = "box"

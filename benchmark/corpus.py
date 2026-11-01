@@ -16,15 +16,13 @@ multi-trade utterance, where the second clause's expected ledger balance genuine
 depend on the first clause committing within that same evaluate_utterance() call, exactly
 as the production firewall already handles it.
 
-Clause convention (required by BilingualCatalogMatcher.parse_utterance /
-split_multi_trade_clauses — confirmed against the existing passing integration test using
-PLAYGROUND_SCREENSHOT_TRANSCRIPT): each trade clause is
+Clause convention (split_multi_trade_clauses also accepts the rate after the rate word and a
+buyer name as a clause boundary; the corpus keeps one fixed order): each trade clause is
     <buyer dative-form> <quantity> <unit> <sku> <rate> ரேட்டு
-with "ரேட்டு" (or "ரேட்"/"rate") acting as the clause *terminator*, not a "here comes the
-rate" prefix — normalize_hybrid_tamil_numerals runs on the whole utterance before the
-split, so an additive-hybrid rate spelling before "ரேட்டு" is already a resolved digit by
-the time the clause boundary is found. Multiple trades in one utterance are simply
-multiple such clauses back to back.
+normalize_hybrid_tamil_numerals runs on the whole utterance before the split, so an
+additive-hybrid rate spelling before "ரேட்டு" is already a resolved digit by the time the clause
+boundary is found. Multiple trades in one utterance are simply multiple such clauses back to
+back.
 """
 
 from __future__ import annotations
@@ -183,11 +181,7 @@ def _build_single_trade_utterances() -> List[BenchmarkUtterance]:
     for idx, (buyer_id, sku_id, qty, unit_en, rate) in enumerate(tanglish_combos, start=1):
         buyer_short = "Senthil" if buyer_id == BUY_SENTHIL else "Kumaran"
         sku_en = "Vanjaram" if sku_id == SKU_VANJARAM else "Prawn"
-        # split_multi_trade_clauses matches "rate"/"ரேட்டு"/"ரேட்" case-insensitively as a
-        # raw substring (no word-boundary anchor), so only ONE such token may appear per
-        # clause or it splits the rate digits into their own buyer-less clause (caught by
-        # the corpus's own clean-text validation below). "ரேட்டு" is used as the sole
-        # terminator, placed after the digit like every other clause in this corpus.
+        # "ரேட்டு" is the sole rate word, placed after the digit like every other clause here.
         text = f"{buyer_short} ku {_QTY_TANGLISH.get(qty, str(qty))} {unit_en} {sku_en} {rate} ரேட்டு"
         truth = GroundTruthTrade(
             buyer_id=buyer_id, sku_canonical_name=sku_id, quantity=qty, unit=unit_en, rate_inr=rate

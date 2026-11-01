@@ -11,6 +11,7 @@ from kadal_kural.config import (
     AMOUNT_CONFIDENCE_FLOOR,
     AMOUNT_IN_RANGE_CONFIDENCE,
     AMOUNT_OUT_OF_RANGE_SLOPE,
+    BUYER_BOUNDARY_MIN_CONFIDENCE,
     DEFAULT_ASSUMED_UNIT_CONFIDENCE,
     LEFTOVER_NUMBER_CONFIDENCE,
     NO_SKU_FALLBACK_UNIT,
@@ -118,6 +119,24 @@ class BilingualCatalogMatcher:
         sku = self.skus[self._sku_alias_index[matched_alias]]
         return sku, round(float(score) / 100.0, 3)
 
+    def _buyer_phrase_length(self, previous: Optional[str], token: str) -> int:
+        """
+        How many words ending at ``token`` form a buyer name in the dative form (0 if none).
+        Exact aliases win over fuzzy ones, and the one-word form is tried first, so a word
+        before the name isn't swallowed into it ('வேட்டு குமரனுக்கு' is just 'குமரனுக்கு').
+        """
+        candidates = [(1, token)]
+        if previous is not None:
+            candidates.append((2, f"{previous} {token}"))
+        datives = [(n, phrase) for n, phrase in candidates if strip_tamil_dative_suffix(phrase) != phrase]
+        for n, phrase in datives:
+            if strip_tamil_dative_suffix(phrase).lower() in self._buyer_alias_index:
+                return n
+        for n, phrase in datives:
+            if self.resolve_buyer(phrase)[1] >= BUYER_BOUNDARY_MIN_CONFIDENCE:
+                return n
+        return 0
+
     def normalize(self, raw_utterance: str) -> str:
         """The normalize stage: resolves Prisma's hybrid Tamil-word/digit numerals."""
         return normalize_hybrid_tamil_numerals(raw_utterance)
@@ -140,7 +159,7 @@ class BilingualCatalogMatcher:
         held_context: Optional[HeldTradeContext] = None,
     ) -> List[TradeIntent]:
         """The match stage: parse_utterance on text that normalize() already resolved."""
-        clauses = split_multi_trade_clauses(normalized_full)
+        clauses = split_multi_trade_clauses(normalized_full, self._buyer_phrase_length)
         intents: List[TradeIntent] = []
 
         for clause in clauses:

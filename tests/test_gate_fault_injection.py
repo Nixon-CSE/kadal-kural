@@ -165,19 +165,10 @@ def test_thousandfold_quantity_is_held_by_the_gate_and_by_the_credit_limit_witho
     assert ungated.status == LedgerEventStatus.CREDIT_HOLD_BREACH
 
 
-# Real Prisma output at market @ 5 dB: the ரேட்டு terminator was misheard, so two trades reached
-# the parser as one clause. Before the leftover-number check the first trade booked and the
-# second vanished. The whole clause must be held, with nothing booked.
-MERGED_CLAUSES = {
-    "multi_02": "செந்திலுக்கு 10 கிலோ வஞ்சரம் 800 வேட்டு குமரனுக்கு 10 கிலோ வஞ்சரம் 800 வேட்டு",
-    "multi_13": "குமரனுக்கு 40 கிலோ எக்ஸ்போர்ட் வஞ்சரம் எழுநூற்றி 40 ரேக்கு செந்திலுக்கு 30 கிலோ டைகர் பிரான் நானூற்றி 50 ரேக்கு",
-    "multi_20": "செந்திலுக்கு 30 கிலோ வஞ்சரம் 600 வேட்டு செந்திலி சிவக்கு 40 கிலோ வஞ்சரம் 600 வேட்டு",
-    "multi_21": "குமரனுக்கு 20 கிலோ டைகர் பிரான் 350 ரைட்டு குமரனுக்கு 10 கிலோ டைகர் பிரான் 500 ரைட்டு",
-}
-
-
-@pytest.mark.parametrize("transcript", MERGED_CLAUSES.values(), ids=MERGED_CLAUSES.keys())
-def test_merged_clause_is_held_not_half_booked(transcript: str, tmp_path: Path) -> None:
+def test_merged_clause_with_no_second_buyer_is_held_not_half_booked(tmp_path: Path) -> None:
+    # misheard terminator and no buyer to split on: the second trade's numbers are left over,
+    # so nothing books (tests/test_clause_boundaries.py covers merges a buyer name can split)
+    transcript = "செந்திலுக்கு 10 கிலோ வஞ்சரம் 800 வேட்டு 5 கிலோ டைகர் பிரான் 560 வேட்டு"
     (decision,) = _decide(tmp_path, transcript, gate=True)
     assert decision.status == LedgerEventStatus.PENDING_CLARIFICATION
     assert decision.confidence == LEFTOVER_NUMBER_CONFIDENCE

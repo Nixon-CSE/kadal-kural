@@ -6,7 +6,7 @@ and Timbre v2.5 currency prosody formatter.
 from __future__ import annotations
 
 import re
-from typing import Dict, Final, FrozenSet, List, Optional, Tuple
+from typing import Callable, Dict, Final, FrozenSet, List, Optional, Tuple
 
 TAMIL_ADDITIVE_PREFIXES: Final[Dict[str, int]] = {
     "நூற்றி": 100,
@@ -73,6 +73,9 @@ CANONICAL_UNIT_MAP: Final[Dict[str, str]] = {
     "கிலோ": "kg", "கேஜி": "kg", "kilo": "kg", "kg": "kg",
     "செட்": "set", "set": "set", "பீஸ்": "pcs", "pieces": "pcs",
 }
+
+_RATE_WORD_PATTERN: Final[re.Pattern[str]] = re.compile(r"(?:ரேட்டு|ரேட்|rate)", re.IGNORECASE)
+_RATE_WORD_MARK: Final[str] = "\x00RATE\x00"
 
 TRAILING_LEDGER_VERBS: Final[FrozenSet[str]] = frozenset({
     "கிரெடிட்டில்", "கிரெடிட்", "credit", "கணக்கில்", "லெட்ஜர்",
@@ -328,16 +331,59 @@ def format_inr_for_timbre_prosody(amount_inr: int) -> str:
     return f"ரூபாய் {amount_inr:,}"
 
 
-def split_multi_trade_clauses(normalized_text: str) -> List[str]:
-    """Splits a single-breath utterance across rate boundary markers ('ரேட்டு', 'ரேட்', 'rate')."""
-    raw_clauses = re.split(r"(?:ரேட்டு|ரேட்|rate)\s*", normalized_text, flags=re.IGNORECASE)
+def _is_number(token: str) -> bool:
+    return strip_numeral_decoration(token) is not None
+
+
+def split_multi_trade_clauses(
+    normalized_text: str,
+    buyer_phrase_length: Optional[Callable[[Optional[str], str], int]] = None,
+) -> List[str]:
+    """
+    Splits a single-breath utterance into one clause per trade. Boundaries:
+
+    - The rate word ('ரேட்டு', 'ரேட், 'rate') ends a clause, whichever side of it the rate is on:
+      '... 740 ரேட்டு' and '... ரேட்டு 740' both give a clause holding quantity and rate. A number
+      after the rate word is taken as the rate only while the clause still lacks one, and not
+      when a unit follows it ('ரேட்டு 30 கிலோ' starts the next trade's quantity).
+    - A buyer name starts a new clause once the current one holds a number, even with no rate
+      word before it (Prisma sometimes mishears the rate word). ``buyer_phrase_length(previous,
+      token)`` says whether ``token`` ends a buyer phrase: 0 no, 1 by itself, 2 with the word
+      before it (``previous``, None when that word is a number).
+
+    Misspelled rate words are deliberately not matched.
+    """
+    tokens = _RATE_WORD_PATTERN.sub(f" {_RATE_WORD_MARK} ", normalized_text).split()
+    clauses: List[List[str]] = []
+    current: List[str] = []
+    numbers = 0
+    idx = 0
+    while idx < len(tokens):
+        token = tokens[idx]
+        if token == _RATE_WORD_MARK:
+            following = tokens[idx + 1] if idx + 1 < len(tokens) else ""
+            after_following = tokens[idx + 2].lower() if idx + 2 < len(tokens) else ""
+            if numbers == 1 and _is_number(following) and after_following not in CANONICAL_UNIT_MAP:
+                current.append(following)
+                idx += 1
+            clauses.append(current)
+            current, numbers = [], 0
+        else:
+            if numbers and buyer_phrase_length is not None:
+                previous = current[-1] if not _is_number(current[-1]) else None
+                length = buyer_phrase_length(previous, token)
+                if length:
+                    carried = [current.pop()] if length == 2 else []
+                    clauses.append(current)
+                    current, numbers = carried, 0
+            current.append(token)
+            numbers += _is_number(token)
+        idx += 1
+    clauses.append(current)
+
     valid_clauses: List[str] = []
-    for clause in raw_clauses:
-        cleaned = clause.strip(" ,.-")
-        if not cleaned:
-            continue
-        words = cleaned.split()
-        if all(w.lower() in TRAILING_LEDGER_VERBS for w in words):
-            continue
-        valid_clauses.append(cleaned)
+    for words in clauses:
+        cleaned = " ".join(words).strip(" ,.-")
+        if cleaned and not all(w.lower() in TRAILING_LEDGER_VERBS for w in cleaned.split()):
+            valid_clauses.append(cleaned)
     return valid_clauses
