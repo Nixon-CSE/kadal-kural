@@ -313,6 +313,9 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                 try:
                     while True:
                         msg = await client_ws.receive()
+                        if msg["type"] == "websocket.disconnect":  # receive() must not be called again
+                            logger.info("Live audio client disconnected (code %s)", msg.get("code"))
+                            break
                         if "bytes" in msg and msg["bytes"]:
                             for frame_1024 in pacer.push_bytes(msg["bytes"]):
                                 await prisma_ws.send(frame_1024)
@@ -320,16 +323,18 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                             ctrl = json.loads(msg["text"])
                             if ctrl.get("action") == "commit_now":
                                 await assembler.flush_immediately()
-                except WebSocketDisconnect:
-                    pass
+                except WebSocketDisconnect as exc:
+                    logger.info("Live audio client disconnected (code %s)", exc.code)
                 finally:
                     prisma_recv_task.cancel()
+                    await asyncio.gather(prisma_recv_task, return_exceptions=True)
+                    await assembler.close()
         except Exception as exc:
             logger.exception("Live audio WebSocket error: %s", exc)
             try:
                 await client_ws.send_json({"type": "error", "message": str(exc)})
-            except Exception:
-                pass
+            except Exception as send_exc:
+                logger.debug("Could not report the error to the client: %s", send_exc)
 
     @app.post("/api/v1/reset")
     async def reset_ledger() -> Dict[str, Any]:
