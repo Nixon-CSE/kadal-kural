@@ -335,6 +335,16 @@ def _is_number(token: str) -> bool:
     return strip_numeral_decoration(token) is not None
 
 
+def ends_with_rate_terminator(normalized_text: str) -> bool:
+    """True for '... 740 ரேட்டு' and '... ரேட்டு 740': the last clause was closed by its rate word."""
+    tokens = normalized_text.split()
+    if not tokens:
+        return False
+    if _RATE_WORD_PATTERN.fullmatch(tokens[-1]):
+        return True
+    return len(tokens) >= 2 and _is_number(tokens[-1]) and bool(_RATE_WORD_PATTERN.fullmatch(tokens[-2]))
+
+
 def split_multi_trade_clauses(
     normalized_text: str,
     buyer_phrase_length: Optional[Callable[[Optional[str], str], int]] = None,

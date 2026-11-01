@@ -61,6 +61,12 @@ BUYER_BOUNDARY_MIN_CONFIDENCE: float = 0.82
 # Such a trade already fails the gate on SKU confidence; this only fills TradeIntent.unit.
 NO_SKU_FALLBACK_UNIT: str = "box"
 
+# How long the assembler waits for more speech when the text so far isn't a complete set of
+# trades ending in a rate terminator. Complete text commits at once, so this only applies to
+# fragments, overrides and undo. Longer than the old fixed 1.5 s because a mid-trade pause must
+# not cut a trade in half. Chosen by judgement: no live data on pause lengths exists yet.
+ASSEMBLER_INCOMPLETE_WINDOW_SEC: float = 2.5
+
 # Span names PreDispatchCreditFirewallService records into PipelineTelemetry per utterance.
 # 'decide' covers every intent's gate and credit check, including the SQLite ledger write.
 SPAN_NORMALIZE: str = "normalize"
@@ -120,7 +126,6 @@ class AppSettings(BaseSettings):
     vad_threshold: float = Field(default=0.78, ge=0.0, le=1.0)
     min_speech_ms: int = Field(default=200, ge=50, le=2000)
     min_silence_ms: int = Field(default=360, ge=100, le=2000)
-    assembler_window_sec: float = Field(default=1.5, ge=0.3, le=5.0)
 
     # Credit Firewall & Persistence Parameters
     confidence_threshold: float = Field(default=0.82, ge=0.50, le=0.99)

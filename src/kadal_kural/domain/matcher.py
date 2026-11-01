@@ -28,6 +28,7 @@ from kadal_kural.domain.normalizer import (
     BARGE_IN_OVERRIDE_MARKERS,
     CANONICAL_UNIT_MAP,
     TRAILING_LEDGER_VERBS,
+    ends_with_rate_terminator,
     normalize_hybrid_tamil_numerals,
     split_multi_trade_clauses,
     strip_numeral_decoration,
@@ -136,6 +137,22 @@ class BilingualCatalogMatcher:
             if self.resolve_buyer(phrase)[1] >= BUYER_BOUNDARY_MIN_CONFIDENCE:
                 return n
         return 0
+
+    def is_complete_utterance(self, text: str) -> bool:
+        """
+        True when ``text`` parses into complete trades (buyer, SKU, quantity and rate each
+        resolved, no clause left without a trade) and ends with a rate terminator, so waiting
+        for more speech can add nothing. Says nothing about confidence: the gate decides that.
+        """
+        normalized = self.normalize(text)
+        if not ends_with_rate_terminator(normalized):
+            return False
+        intents = self.parse_normalized(normalized, text)
+        clauses = split_multi_trade_clauses(normalized, self._buyer_phrase_length)
+        return bool(intents) and len(intents) == len(clauses) and all(
+            i.buyer_id is not None and i.sku_id is not None and i.quantity is not None and i.rate_inr is not None
+            for i in intents
+        )
 
     def normalize(self, raw_utterance: str) -> str:
         """The normalize stage: resolves Prisma's hybrid Tamil-word/digit numerals."""

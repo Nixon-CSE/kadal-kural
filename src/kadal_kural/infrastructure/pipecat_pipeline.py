@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, List, Optional
 
-from kadal_kural.config import TIMING_PATH_PIPECAT
+from kadal_kural.config import ASSEMBLER_INCOMPLETE_WINDOW_SEC, TIMING_PATH_PIPECAT
 from kadal_kural.domain.models import CreditGateDecision
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.domain.telemetry import UtteranceEvaluation
@@ -87,7 +87,7 @@ class PipecatArthaPipelineRunner:
         firewall_service: PreDispatchCreditFirewallService,
         speech_client: GnaniArthaSpeechClient,
         *,
-        assembler_window_sec: float = 1.5,
+        assembler_window_sec: float = ASSEMBLER_INCOMPLETE_WINDOW_SEC,
         on_decision_emitted: Optional[Callable[[CreditDecisionFrame], Awaitable[None]]] = None,
         on_tts_emitted: Optional[Callable[[TTSAudioRawFrame], Awaitable[None]]] = None,
     ) -> None:
@@ -102,6 +102,7 @@ class PipecatArthaPipelineRunner:
         self._assembler = MultiSegmentTradeAssembler(
             window_sec=assembler_window_sec,
             on_commit=self._handle_assembled_utterance,
+            is_complete=firewall_service.matcher.is_complete_utterance,
         )
 
     async def push_frame(self, frame: Frame, *, synthesize_live_tts: bool = False) -> None:

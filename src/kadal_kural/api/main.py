@@ -25,6 +25,7 @@ import websockets
 from websockets.exceptions import ConnectionClosed
 
 from kadal_kural.config import (
+    ASSEMBLER_INCOMPLETE_WINDOW_SEC,
     LIVE_MIC_SAMPLE_RATE,
     TIMING_LOGGER_NAME,
     TIMING_PATH_INGEST,
@@ -210,7 +211,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         """
         Full-duplex live audio bridge:
         Browser Mic (8kHz 16-bit PCM) -> 1,024-byte RingBuffer -> Gnani Prisma v2.5 WS
-        -> TradeAssembler (assembler_window_sec) -> Credit Firewall -> Gnani Timbre v2.5 WS -> Browser Speaker.
+        -> TradeAssembler (commits complete trades at once) -> Credit Firewall -> Gnani Timbre v2.5 WS -> Browser Speaker.
         """
         await client_ws.accept()
         if not cfg.gnani_api_key or cfg.gnani_api_key == "your_gnani_api_key_here":
@@ -255,8 +256,9 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             )
 
         assembler = MultiSegmentTradeAssembler(
-            window_sec=cfg.assembler_window_sec,
+            window_sec=ASSEMBLER_INCOMPLETE_WINDOW_SEC,
             on_commit=_on_assembled_utterance,
+            is_complete=matcher.is_complete_utterance,
         )
 
         try:

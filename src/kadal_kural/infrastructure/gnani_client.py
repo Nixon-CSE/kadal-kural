@@ -143,8 +143,10 @@ class AssembledUtterance:
 
 class MultiSegmentTradeAssembler:
     """
-    Stitches consecutive VAD speech segments across a sliding window (AppSettings.assembler_window_sec)
-    so multi-trade single-breath utterances split by a brief breath pause are evaluated atomically.
+    Stitches consecutive VAD speech segments into one utterance. Text that ``is_complete`` says
+    is finished commits at once; anything else waits ``window_sec`` for more speech, restarting
+    on each segment. Each commit runs in its own task, one at a time and in order, so a new
+    segment can only cancel the wait, never a voice turn already under way.
     """
 
     def __init__(
@@ -152,43 +154,67 @@ class MultiSegmentTradeAssembler:
         window_sec: float,
         on_commit: Callable[[AssembledUtterance], Awaitable[None]],
         clock: Callable[[], int] = time.perf_counter_ns,
+        is_complete: Optional[Callable[[str], bool]] = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._window_sec = window_sec
         self._on_commit = on_commit
         self._clock = clock
+        self._is_complete = is_complete
+        self._sleep = sleep
         self._segments: List[str] = []
         self._latencies_ms: List[float] = []
         self._received_ns: List[int] = []
-        self._flush_task: Optional[asyncio.Task[None]] = None
+        self._window_task: Optional[asyncio.Task[None]] = None
+        self._commit_tasks: Set[asyncio.Task[None]] = set()
+        self._commit_lock = asyncio.Lock()
 
     async def ingest_segment(
         self, transcript: str, stt_latency_ms: float, received_ns: Optional[int] = None
     ) -> None:
-        """Buffers a VAD segment (received at ``received_ns``, default now) and restarts the window."""
+        """Buffers a VAD segment (received at ``received_ns``, default now); commits or restarts the wait."""
         cleaned = transcript.strip()
         if not cleaned:
             return
         self._segments.append(cleaned)
         self._latencies_ms.append(stt_latency_ms)
         self._received_ns.append(self._clock() if received_ns is None else received_ns)
-        if self._flush_task is not None and not self._flush_task.done():
-            self._flush_task.cancel()
-        self._flush_task = asyncio.create_task(self._wait_and_flush())
+        self._cancel_window()
+        if self._is_complete is not None and self._is_complete(" ".join(self._segments)):
+            self._start_commit()
+        else:
+            self._window_task = asyncio.create_task(self._wait_then_commit())
 
     async def flush_immediately(self) -> None:
-        """Commits any buffered segments now instead of waiting for the window to elapse."""
-        if self._flush_task is not None and not self._flush_task.done():
-            self._flush_task.cancel()
-        await self._commit_buffer()
+        """Commits any buffered segments now and waits for every commit under way to finish."""
+        self._cancel_window()
+        self._start_commit()
+        if self._commit_tasks:
+            await asyncio.gather(*self._commit_tasks, return_exceptions=True)
 
-    async def _wait_and_flush(self) -> None:
-        try:
-            await asyncio.sleep(self._window_sec)
-            await self._commit_buffer()
-        except asyncio.CancelledError:
-            return
+    async def close(self) -> None:
+        """Stops for good (the client left): drops uncommitted segments, cancels commits under way."""
+        self._cancel_window()
+        self._segments.clear()
+        self._latencies_ms.clear()
+        self._received_ns.clear()
+        tasks = list(self._commit_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _commit_buffer(self) -> None:
+    def _cancel_window(self) -> None:
+        if self._window_task is not None and not self._window_task.done():
+            self._window_task.cancel()
+        self._window_task = None
+
+    async def _wait_then_commit(self) -> None:
+        await self._sleep(self._window_sec)
+        self._window_task = None
+        self._start_commit()
+
+    def _start_commit(self) -> None:
         if not self._segments:
             return
         utterance = AssembledUtterance(
@@ -200,7 +226,16 @@ class MultiSegmentTradeAssembler:
         self._segments.clear()
         self._latencies_ms.clear()
         self._received_ns.clear()
-        await self._on_commit(utterance)
+        task = asyncio.create_task(self._run_commit(utterance))
+        self._commit_tasks.add(task)
+        task.add_done_callback(self._commit_tasks.discard)
+
+    async def _run_commit(self, utterance: AssembledUtterance) -> None:
+        async with self._commit_lock:
+            try:
+                await self._on_commit(utterance)
+            except Exception:  # no caller awaits this task, so nothing else would report it
+                logger.exception("Voice turn failed for an assembled utterance")
 
 
 def finalize_streamed_wav(audio: bytes) -> bytes:
