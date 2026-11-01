@@ -33,6 +33,7 @@ from kadal_kural.config import (
     AppSettings,
     frame_pace_seconds,
 )
+from kadal_kural.domain.normalizer import TRAILING_LEDGER_VERBS
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +177,8 @@ class MultiSegmentTradeAssembler:
         cleaned = transcript.strip()
         if not cleaned:
             return
+        if not self._segments and all(w.lower() in TRAILING_LEDGER_VERBS for w in cleaned.split()):
+            return  # 'கிரெடிட்டில் ஏற்று' after a trade that already committed is not a new utterance
         self._segments.append(cleaned)
         self._latencies_ms.append(stt_latency_ms)
         self._received_ns.append(self._clock() if received_ns is None else received_ns)

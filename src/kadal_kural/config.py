@@ -61,6 +61,9 @@ BUYER_BOUNDARY_MIN_CONFIDENCE: float = 0.82
 # Such a trade already fails the gate on SKU confidence; this only fills TradeIntent.unit.
 NO_SKU_FALLBACK_UNIT: str = "box"
 
+# Spoken whenever a turn has nothing else to say: a clarification, or no trade parsed at all.
+CLARIFICATION_PROMPT_TAMIL: str = "பெயர் அல்லது விலை தெளிவாக இல்லை. தயவுசெய்து மீண்டும் சொல்லுங்கள்."
+
 # How long the assembler waits for more speech when the text so far isn't a complete set of
 # trades ending in a rate terminator. Complete text commits at once, so this only applies to
 # fragments, overrides and undo. Longer than the old fixed 1.5 s because a mid-trade pause must
@@ -90,6 +93,10 @@ TIMING_PATH_UPLOAD_WAV: str = "upload_wav"
 TIMING_PATH_INGEST: str = "ingest"
 TIMING_PATH_PIPECAT: str = "pipecat"
 TIMING_LOG_DECIMALS: int = 3  # milliseconds to the microsecond
+TIMING_WALL_CLOCK_FORMAT: str = "%H:%M:%S"  # same as the ledger's created_at, to line the two up
+REPLY_AUDIO: str = "audio"
+REPLY_INTERRUPTED: str = "interrupted"  # barge-in cut it; audio holds whatever arrived first
+REPLY_EMPTY: str = "empty"
 
 
 def frame_pace_seconds(sample_rate: int) -> float:

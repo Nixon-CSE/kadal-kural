@@ -26,6 +26,7 @@ from websockets.exceptions import ConnectionClosed
 
 from kadal_kural.config import (
     ASSEMBLER_INCOMPLETE_WINDOW_SEC,
+    CLARIFICATION_PROMPT_TAMIL,
     LIVE_MIC_SAMPLE_RATE,
     TIMING_LOGGER_NAME,
     TIMING_PATH_INGEST,
@@ -35,6 +36,7 @@ from kadal_kural.config import (
     AppSettings,
 )
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
+from kadal_kural.domain.models import LedgerEventStatus
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.infrastructure.gnani_client import (
     AssembledUtterance,
@@ -72,6 +74,15 @@ def _decision_items(turn: VoiceTurn) -> List[Dict[str, Any]]:
             item["timbre_ttfb_ms"] = reply.ttfb_ms
             item["audio_wav_b64"] = base64.b64encode(reply.audio_wav_bytes).decode("ascii")
         items.append(item)
+    if turn.prompt_reply is not None:  # nothing parsed: shown and played like a clarification
+        items.append(
+            {
+                "status": LedgerEventStatus.PENDING_CLARIFICATION.value,
+                "tts_response_tamil": CLARIFICATION_PROMPT_TAMIL,
+                "timbre_ttfb_ms": turn.prompt_reply.ttfb_ms,
+                "audio_wav_b64": base64.b64encode(turn.prompt_reply.audio_wav_bytes).decode("ascii"),
+            }
+        )
     return items
 
 

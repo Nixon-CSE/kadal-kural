@@ -81,12 +81,15 @@ def utterance_timing_record(
     telemetry: PipelineTelemetry,
     stt_reported_latency_ms: Sequence[float],
     statuses: Sequence[str],
+    reply_outcomes: Sequence[str],
+    logged_at: str,
 ) -> Dict[str, object]:
     """
     The structured timing record for one utterance. Every span is on one timeline whose zero
     is ``origin`` (when the first STT segment arrived, or when the request arrived);
     ``to_first_audio_ms`` is the end of the first reply's Timbre first byte on that timeline,
-    or None when no reply audio was produced.
+    or None when no reply audio was produced. ``reply_outcomes`` has one entry per reply
+    attempted to completion, and ``logged_at`` is the wall-clock time, in the ledger's format.
     """
     spans = {
         span.name: {"start_ms": _ms(span.start_offset_ns), "duration_ms": _ms(span.duration_ns)}
@@ -95,6 +98,7 @@ def utterance_timing_record(
     first_audio = next((s for s in telemetry.spans if s.name == SPAN_TIMBRE_FIRST_BYTE), None)
     return {
         "event": UTTERANCE_TIMING_EVENT,
+        "logged_at": logged_at,
         "path": path,
         "origin": origin,
         "stt_segments": len(stt_reported_latency_ms),
@@ -104,6 +108,7 @@ def utterance_timing_record(
             None if first_audio is None else _ms(first_audio.start_offset_ns + first_audio.duration_ns)
         ),
         "decisions": list(statuses),
+        "reply_outcomes": list(reply_outcomes),
     }
 
 

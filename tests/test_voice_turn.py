@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Union
 
 import pytest
 from fastapi.testclient import TestClient
 
 from kadal_kural.api.main import create_app
 from kadal_kural.config import (
+    CLARIFICATION_PROMPT_TAMIL,
     NS_PER_MS,
+    REPLY_AUDIO,
+    REPLY_INTERRUPTED,
     SPAN_ASSEMBLE,
     SPAN_DECIDE,
     SPAN_MATCH,
@@ -100,18 +104,20 @@ def test_timing_record_format_is_one_compact_json_line(caplog: pytest.LogCapture
         telemetry=telemetry,
         stt_reported_latency_ms=[212, 230.5],
         statuses=["BOOKED"],
+        reply_outcomes=["audio"],
+        logged_at="18:47:03",
     )
     with caplog.at_level(logging.INFO, logger=TIMING_LOGGER_NAME):
         line = log_utterance_timing(record)
     assert _timing_lines(caplog) == [line]
     assert "\n" not in line and ": " not in line  # one compact line
     assert line == (
-        '{"event":"utterance_timing","path":"live_ws","origin":"first_stt_segment_received",'
+        '{"event":"utterance_timing","logged_at":"18:47:03","path":"live_ws","origin":"first_stt_segment_received",'
         '"stt_segments":2,"stt_reported_latency_ms":[212.0,230.5],'
         '"spans":{"assemble":{"start_ms":0.0,"duration_ms":1500.123},'
         '"decide":{"start_ms":1500.123,"duration_ms":0.25},'
         '"timbre_first_byte":{"start_ms":1500.5,"duration_ms":399.5}},'
-        '"to_first_audio_ms":1900.0,"decisions":["BOOKED"]}'
+        '"to_first_audio_ms":1900.0,"decisions":["BOOKED"],"reply_outcomes":["audio"]}'
     )
 
 
@@ -133,7 +139,9 @@ async def test_voice_turn_logs_every_stage_on_one_timeline_from_the_first_segmen
     assert line == turn.log_line
     # the firewall's own stages take no fake time; Timbre's first byte arrives TTFB_MS later
     stage = {"start_ms": float(ASSEMBLE_MS), "duration_ms": 0.0}
-    assert json.loads(line) == {
+    record = json.loads(line)
+    assert isinstance(record.pop("logged_at"), str)
+    assert record == {
         "event": UTTERANCE_TIMING_EVENT,
         "path": TIMING_PATH_LIVE_WS,
         "origin": TIMING_ORIGIN_FIRST_SEGMENT,
@@ -148,6 +156,7 @@ async def test_voice_turn_logs_every_stage_on_one_timeline_from_the_first_segmen
         },
         "to_first_audio_ms": float(ASSEMBLE_MS + TTFB_MS),
         "decisions": ["CREDIT_HOLD_BREACH", "BOOKED"],
+        "reply_outcomes": [REPLY_AUDIO, REPLY_AUDIO],
     }
     assert [d.stt_latency_ms for d in turn.evaluation.decisions] == [220.0, 220.0]
 
@@ -217,3 +226,135 @@ def test_ingest_endpoint_logs_one_timing_line_from_request_receipt(
     assert record["to_first_audio_ms"] is None  # no key, so no reply was synthesized
     statuses: Tuple[str, ...] = tuple(d["status"] for d in response.json()["decisions"])
     assert list(statuses) == record["decisions"]
+
+
+# ------------------------------------------------------------------------------ every turn speaks
+
+UNKNOWN_BUYER = "புது கடைக்கு 30 கிலோ வஞ்சரம் 800 ரேட்டு"  # goes to PENDING_CLARIFICATION
+NO_TRADE = "இன்னைக்கு கடல் நல்லா இருக்கு"  # parses into no decision at all
+
+
+class ScriptedTimbre:
+    """Plays back a script of replies, or exceptions, one per synthesis."""
+
+    def __init__(self, script: List[Union[SynthesisTelemetry, Exception]]) -> None:
+        self.script = list(script)
+        self.texts: List[str] = []
+
+    async def synthesize_timbre_v25(
+        self, text_tamil: str, *, on_first_audio: Optional[Callable[[], None]] = None
+    ) -> SynthesisTelemetry:
+        self.texts.append(text_tamil)
+        step = self.script.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        if step.audio_wav_bytes and on_first_audio is not None:
+            on_first_audio()
+        return step
+
+
+def _audio(wav: bytes = b"RIFF", interrupted: bool = False) -> SynthesisTelemetry:
+    return SynthesisTelemetry(wav, 300.0, 400.0, interrupted)
+
+
+async def test_turn_with_zero_decisions_still_speaks_the_prompt(
+    firewall: PreDispatchCreditFirewallService, caplog: pytest.LogCaptureFixture
+) -> None:
+    timbre = ScriptedTimbre([_audio()])
+    with caplog.at_level(logging.INFO, logger=TIMING_LOGGER_NAME):
+        turn = await run_voice_turn(firewall, timbre, NO_TRADE, path=TIMING_PATH_LIVE_WS)
+    assert turn.evaluation.decisions == ()
+    assert timbre.texts == [CLARIFICATION_PROMPT_TAMIL]
+    assert turn.prompt_reply is not None
+    (line,) = _timing_lines(caplog)
+    record = json.loads(line)
+    assert SPAN_TIMBRE_FIRST_BYTE in record["spans"] and record["to_first_audio_ms"] is not None
+    assert (record["decisions"], record["reply_outcomes"]) == ([], [REPLY_AUDIO])
+
+
+async def test_zero_decisions_without_tts_stays_silent(firewall: PreDispatchCreditFirewallService) -> None:
+    timbre = ScriptedTimbre([])
+    turn = await run_voice_turn(firewall, timbre, NO_TRADE, path=TIMING_PATH_INGEST, synthesize=False)
+    assert timbre.texts == [] and turn.prompt_reply is None
+
+
+@pytest.mark.parametrize(
+    "first_attempt",
+    [pytest.param(_audio(b""), id="no-audio"), pytest.param(RuntimeError("Timbre hiccup"), id="failed")],
+)
+async def test_clarification_with_no_audio_is_spoken_again(
+    first_attempt: Union[SynthesisTelemetry, Exception],
+    firewall: PreDispatchCreditFirewallService,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    timbre = ScriptedTimbre([first_attempt, _audio()])
+    with caplog.at_level(logging.INFO, logger=TIMING_LOGGER_NAME):
+        turn = await run_voice_turn(firewall, timbre, UNKNOWN_BUYER, path=TIMING_PATH_LIVE_WS)
+    assert timbre.texts == [CLARIFICATION_PROMPT_TAMIL, CLARIFICATION_PROMPT_TAMIL]
+    assert turn.replies[0] is not None and turn.replies[0].audio_wav_bytes
+    (line,) = _timing_lines(caplog)
+    assert SPAN_TIMBRE_FIRST_BYTE in json.loads(line)["spans"]
+
+
+async def test_clarification_cut_by_barge_in_is_not_spoken_over_the_trader(
+    firewall: PreDispatchCreditFirewallService, caplog: pytest.LogCaptureFixture
+) -> None:
+    timbre = ScriptedTimbre([_audio(b"", interrupted=True)])
+    with caplog.at_level(logging.INFO, logger=TIMING_LOGGER_NAME):
+        await run_voice_turn(firewall, timbre, UNKNOWN_BUYER, path=TIMING_PATH_LIVE_WS)
+    assert len(timbre.texts) == 1
+    (line,) = _timing_lines(caplog)
+    assert json.loads(line)["reply_outcomes"] == [REPLY_INTERRUPTED]  # the log explains the missing span
+
+
+async def test_segment_arriving_mid_turn_no_longer_silences_it(firewall: PreDispatchCreditFirewallService) -> None:
+    """The 18:47 mechanism: a repeat arrived before Timbre's first byte and cancelled the turn."""
+    first_byte_gate = asyncio.Event()
+    spoken: List[str] = []
+
+    class SlowTimbre:
+        async def synthesize_timbre_v25(
+            self, text_tamil: str, *, on_first_audio: Optional[Callable[[], None]] = None
+        ) -> SynthesisTelemetry:
+            await first_byte_gate.wait()
+            if on_first_audio is not None:
+                on_first_audio()
+            spoken.append(text_tamil)
+            return _audio()
+
+    async def _commit(utterance: AssembledUtterance) -> None:
+        await run_voice_turn(firewall, SlowTimbre(), utterance.text, path=TIMING_PATH_LIVE_WS)
+
+    assembler = MultiSegmentTradeAssembler(0.0, _commit)
+    await assembler.ingest_segment(UNKNOWN_BUYER, 180.0)
+    await asyncio.sleep(0.01)  # the wait is over and Timbre was asked; no audio yet
+    await assembler.ingest_segment("குமரனுக்கு 5 கிலோ டைகர் பிரான் 560 ரேட்டு", 180.0)
+    first_byte_gate.set()
+    await assembler.flush_immediately()
+    assert len(spoken) == 2 and spoken[0] == CLARIFICATION_PROMPT_TAMIL
+
+
+async def test_lone_ledger_verb_after_a_committed_trade_is_not_an_utterance() -> None:
+    committed: List[AssembledUtterance] = []
+
+    async def _commit(utterance: AssembledUtterance) -> None:
+        committed.append(utterance)
+
+    assembler = MultiSegmentTradeAssembler(0.0, _commit)
+    await assembler.ingest_segment("கிரெடிட்டில் ஏற்று", 180.0)
+    await assembler.flush_immediately()
+    assert committed == []
+    await assembler.ingest_segment("குமரனுக்கு 5 கிலோ", 180.0)
+    await assembler.ingest_segment("கிரெடிட்டில் ஏற்று", 180.0)  # part of an utterance still being assembled
+    await assembler.flush_immediately()
+    assert [u.text for u in committed] == ["குமரனுக்கு 5 கிலோ கிரெடிட்டில் ஏற்று"]
+
+
+async def test_failed_commit_is_logged_not_lost(caplog: pytest.LogCaptureFixture) -> None:
+    async def _commit(utterance: AssembledUtterance) -> None:
+        raise RuntimeError("Timbre down")
+
+    assembler = MultiSegmentTradeAssembler(0.0, _commit)
+    await assembler.ingest_segment("குமரனுக்கு 5 கிலோ", 180.0)
+    await assembler.flush_immediately()
+    assert any(r.levelno == logging.ERROR and "Voice turn failed" in r.getMessage() for r in caplog.records)

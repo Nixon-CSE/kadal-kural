@@ -5,7 +5,14 @@ from __future__ import annotations
 from typing import FrozenSet, List, Optional
 import urllib.parse
 
-from kadal_kural.config import SPAN_DECIDE, SPAN_MATCH, SPAN_NORMALIZE, SPAN_UNDO, AppSettings
+from kadal_kural.config import (
+    CLARIFICATION_PROMPT_TAMIL,
+    SPAN_DECIDE,
+    SPAN_MATCH,
+    SPAN_NORMALIZE,
+    SPAN_UNDO,
+    AppSettings,
+)
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.models import (
     CreditGateDecision,
@@ -156,7 +163,7 @@ class PreDispatchCreditFirewallService:
                 upi_payment_uri="",
                 commit_balance=False,
             )
-            tts_msg = "பெயர் அல்லது விலை தெளிவாக இல்லை. தயவுசெய்து மீண்டும் சொல்லுங்கள்."
+            tts_msg = CLARIFICATION_PROMPT_TAMIL
             return CreditGateDecision(
                 event_id=event_id,
                 status=LedgerEventStatus.PENDING_CLARIFICATION,

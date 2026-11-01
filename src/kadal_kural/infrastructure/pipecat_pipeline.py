@@ -147,7 +147,7 @@ class PipecatArthaPipelineRunner:
             if self._on_decision_emitted is not None:
                 await self._on_decision_emitted(decision_frame)
 
-        async def _emit_reply(decision: CreditGateDecision, telemetry: SynthesisTelemetry) -> None:
+        async def _emit_reply(decision: Optional[CreditGateDecision], telemetry: SynthesisTelemetry) -> None:
             tts_frame = TTSAudioRawFrame(
                 decision=decision,
                 wav_bytes=telemetry.audio_wav_bytes,

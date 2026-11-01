@@ -7,17 +7,23 @@ byte). Shared by the FastAPI gateway and the Pipecat-style pipeline runner.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable, List, Optional, Protocol, Sequence, Tuple
 
 from kadal_kural.config import (
+    CLARIFICATION_PROMPT_TAMIL,
+    REPLY_AUDIO,
+    REPLY_EMPTY,
+    REPLY_INTERRUPTED,
     SPAN_ASSEMBLE,
     SPAN_TIMBRE_FIRST_BYTE,
     TIMING_ORIGIN_FIRST_SEGMENT,
     TIMING_ORIGIN_REQUEST,
+    TIMING_WALL_CLOCK_FORMAT,
 )
-from kadal_kural.domain.models import CreditGateDecision
+from kadal_kural.domain.models import CreditGateDecision, LedgerEventStatus
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.domain.telemetry import PipelineTelemetry, UtteranceEvaluation
 from kadal_kural.infrastructure.gnani_client import SynthesisTelemetry
@@ -27,6 +33,15 @@ from kadal_kural.infrastructure.timing import (
     log_utterance_timing,
     utterance_timing_record,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+def _reply_outcome(reply: SynthesisTelemetry) -> str:
+    if reply.was_interrupted:
+        return REPLY_INTERRUPTED
+    return REPLY_AUDIO if reply.audio_wav_bytes else REPLY_EMPTY
 
 
 class SpeechSynthesizer(Protocol):
@@ -43,6 +58,7 @@ class VoiceTurn:
 
     evaluation: UtteranceEvaluation
     replies: Tuple[Optional[SynthesisTelemetry], ...]
+    prompt_reply: Optional[SynthesisTelemetry]  # the clarification spoken when nothing was parsed
     telemetry: PipelineTelemetry
     log_line: str
 
@@ -58,7 +74,7 @@ async def run_voice_turn(
     decision_stt_latency_ms: Optional[float] = None,
     synthesize: bool = True,
     on_evaluated: Optional[Callable[[UtteranceEvaluation], Awaitable[None]]] = None,
-    on_reply: Optional[Callable[[CreditGateDecision, SynthesisTelemetry], Awaitable[None]]] = None,
+    on_reply: Optional[Callable[[Optional[CreditGateDecision], SynthesisTelemetry], Awaitable[None]]] = None,
     clock: NanosecondClock = time.perf_counter_ns,
 ) -> VoiceTurn:
     """
@@ -67,7 +83,8 @@ async def run_voice_turn(
     when there was no STT, the moment this is called. ``stt_latencies_ms`` are the
     Prisma-reported per-segment latencies; their mean is stamped on the decisions unless
     ``decision_stt_latency_ms`` overrides it. One JSON timing line is logged even when a
-    synthesis fails part-way.
+    synthesis fails part-way. When synthesizing, every turn speaks: with no decision at all, the
+    clarification prompt (``on_reply`` then gets None for the decision).
     """
     now_ns = clock()
     spans = PerfCounterSpanRecorder(clock, origin_ns=now_ns if first_segment_ns is None else first_segment_ns)
@@ -80,23 +97,54 @@ async def run_voice_turn(
 
     evaluation = firewall.evaluate_utterance_timed(transcript, stt_latency_ms=decision_stt_latency_ms, spans=spans)
     replies: List[Optional[SynthesisTelemetry]] = []
+    prompt_reply: Optional[SynthesisTelemetry] = None
+    first_byte_started = first_byte_seen = False
+
+    def _on_first_audio() -> None:
+        nonlocal first_byte_seen
+        if not first_byte_seen:
+            first_byte_seen = True
+            spans.stop(SPAN_TIMBRE_FIRST_BYTE)
+
+    async def _speak(text: str) -> SynthesisTelemetry:
+        nonlocal first_byte_started
+        if not first_byte_started:
+            first_byte_started = True
+            spans.start(SPAN_TIMBRE_FIRST_BYTE)
+        return await speech.synthesize_timbre_v25(text, on_first_audio=_on_first_audio)
+
+    async def _speak_decision(decision: CreditGateDecision) -> SynthesisTelemetry:
+        """A clarification that fails or comes back with no audio gets one more try."""
+        if decision.status != LedgerEventStatus.PENDING_CLARIFICATION:
+            return await _speak(decision.tts_response_tamil)
+        try:
+            reply = await _speak(decision.tts_response_tamil)
+        except Exception as exc:
+            logger.warning("Clarification reply failed (%s: %s); retrying once", type(exc).__name__, exc)
+        else:
+            if reply.audio_wav_bytes or reply.was_interrupted:
+                return reply  # interrupted: the trader is talking, and that speech gets its own reply
+            logger.warning("Clarification reply came back with no audio; retrying once")
+        return await _speak(CLARIFICATION_PROMPT_TAMIL)
+
     try:
         if on_evaluated is not None:
             await on_evaluated(evaluation)
-        for index, decision in enumerate(evaluation.decisions):
-            if not synthesize:
-                replies.append(None)
-                continue
-            on_first_audio: Optional[Callable[[], None]] = None
-            if index == 0:
-                spans.start(SPAN_TIMBRE_FIRST_BYTE)
-                on_first_audio = lambda: spans.stop(SPAN_TIMBRE_FIRST_BYTE)  # noqa: E731
-            reply = await speech.synthesize_timbre_v25(decision.tts_response_tamil, on_first_audio=on_first_audio)
-            replies.append(reply)
-            if on_reply is not None:
-                await on_reply(decision, reply)
+        if synthesize:
+            for decision in evaluation.decisions:
+                reply = await _speak_decision(decision)
+                replies.append(reply)
+                if on_reply is not None:
+                    await on_reply(decision, reply)
+            if not evaluation.decisions:  # nothing parsed: the trader must still hear something
+                prompt_reply = await _speak(CLARIFICATION_PROMPT_TAMIL)
+                if on_reply is not None:
+                    await on_reply(None, prompt_reply)
+        else:
+            replies.extend(None for _ in evaluation.decisions)
     finally:
         telemetry = spans.telemetry()
+        spoken = [r for r in (*replies, prompt_reply) if r is not None]
         log_line = log_utterance_timing(
             utterance_timing_record(
                 path=path,
@@ -104,6 +152,14 @@ async def run_voice_turn(
                 telemetry=telemetry,
                 stt_reported_latency_ms=stt_latencies_ms,
                 statuses=[d.status.value for d in evaluation.decisions],
+                reply_outcomes=[_reply_outcome(r) for r in spoken],
+                logged_at=time.strftime(TIMING_WALL_CLOCK_FORMAT),
             )
         )
-    return VoiceTurn(evaluation=evaluation, replies=tuple(replies), telemetry=telemetry, log_line=log_line)
+    return VoiceTurn(
+        evaluation=evaluation,
+        replies=tuple(replies),
+        prompt_reply=prompt_reply,
+        telemetry=telemetry,
+        log_line=log_line,
+    )
