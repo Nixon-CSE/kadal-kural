@@ -155,3 +155,7 @@ Measured with `scripts/measure_barge_in.py` (raw trials: `benchmark/barge_in_tri
 What the numbers showed: the `FIRST_COMPLETED` change works (abort → `close()` called dropped to 0.2–1.6 ms in a split-timing check) and is covered by a mocked-socket test where the next frame never arrives, but live Timbre streams frames often enough that the next-frame wait was never the cost. The cost was the WebSocket closing handshake: Timbre answers our close frame ~1 s late and sometimes not at all, when `websockets`' default 10 s `close_timeout` expires (the two 10 s trials). Since an aborted stream is discarded, the client now waits at most 50 ms for that reply before dropping the connection, so the stop time is bounded by that cap.
 
 Timbre first byte (request → first audio byte) from the same trials: P50 375 / P95 525 ms (before, n = 33), 305 / 471 ms (n = 33), 357 / 422 ms (final, n = 25).
+
+## Known limitations
+
+- **In-range quantity digit errors are not caught pre-booking.** A dropped or added quantity digit that stays inside the 1–1,000 kg band (50 → 5 kg, 5 → 50 kg) looks like a normal trade, so the gate books it. They are mitigated, after booking, by the spoken read-back (the reply states quantity, unit, product and amount) and voice undo (reverses the last booked trade), which rely on the trader noticing. A check against each buyer's order history is deferred. `tests/test_gate_fault_injection.py` keeps both cases as strict expected failures, so the suite flags any change in this behavior.

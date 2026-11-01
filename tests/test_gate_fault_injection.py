@@ -86,8 +86,14 @@ def _decide(tmp_path: Path, transcript: str, *, gate: bool) -> List[CreditGateDe
     return PreDispatchCreditFirewallService(settings, matcher, repo).evaluate_utterance(transcript)
 
 
-def _missed(reason: str) -> pytest.MarkDecorator:
-    return pytest.mark.xfail(strict=True, raises=AssertionError, reason=f"gate misses it: {reason}")
+IN_RANGE_QUANTITY_MISS = pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason=(
+        "in-range quantity digit errors are not caught pre-booking; "
+        "mitigated by spoken read-back + voice undo; buyer-history check deferred"
+    ),
+)
 
 
 GATE_CASES = [
@@ -104,12 +110,12 @@ GATE_CASES = [
     pytest.param(
         Corruption("quantity: drop a digit", BIG_QTY, drop_digit("50", 1)),
         id="qty-drop-digit",
-        marks=_missed("5 kg is inside the 1-1,000 kg quantity band and every other field is clean"),
+        marks=IN_RANGE_QUANTITY_MISS,
     ),
     pytest.param(
         Corruption("quantity: add a digit", DIGIT_RATE, add_digit("5", 1, "0")),
         id="qty-add-digit",
-        marks=_missed("50 kg is inside the 1-1,000 kg quantity band and every other field is clean"),
+        marks=IN_RANGE_QUANTITY_MISS,
     ),
     pytest.param(
         Corruption("hybrid split: ஐநூற்று 60 -> 500 60", HYBRID_RATE, replace_token("ஐநூற்று", "500")),
