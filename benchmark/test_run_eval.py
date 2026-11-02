@@ -70,7 +70,9 @@ def test_confident_wrong_rate_is_a_silent_error_the_gate_cannot_see(scorer: Scor
 
 def test_gate_blocks_low_confidence_wrong_buyer_that_ungated_books(scorer: Scorer) -> None:
     utt = _utt("single_01")
-    s = scorer.score(utt, utt.spoken_text.replace("செந்திலுக்கு", "ராமன்"), 0.0)
+    # Dative, so the parser takes it as a buyer phrase; it fuzzy-matches Kumaran at 0.545. (A bare
+    # 'ராமன்' names no buyer at all and is held structurally, gate or not.)
+    s = scorer.score(utt, utt.spoken_text.replace("செந்திலுக்கு", "ராமனுக்கு"), 0.0)
     assert (s.gated.booked, s.gated.silent_errors) == (0, 0)
     assert (s.ungated.booked, s.ungated.silent_errors) == (1, 1)
 

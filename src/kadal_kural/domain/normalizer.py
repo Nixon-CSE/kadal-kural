@@ -299,15 +299,17 @@ def normalize_hybrid_tamil_numerals(utterance: str) -> str:
 
 def strip_tamil_dative_suffix(phrase: str) -> str:
     """
-    Removes Tamil dative case suffixes (-க்கு, -னுக்கு, -லுக்கு, -உக்கு, -ku) attached to buyer names.
+    Removes Tamil dative case suffixes (-க்கு, -னுக்கு, -லுக்கு, -உக்கு, -ku, bare -கு) attached to buyer names.
     Note: In Unicode, 'னுக்கு' is 6 codepoints (ன+ு+க+்+க+ு) and 'லுக்கு' is 6 codepoints (ல+ு+க+்+க+ு).
+    The bare 'கு' is how Prisma writes Tanglish 'ku' glued to a name ('Senthil ku' -> 'செந்தில்கு');
+    it is tried last, after every suffix that itself ends in 'கு'.
     """
     cleaned = phrase.strip()
     if cleaned.endswith("னுக்கு") and len(cleaned) > len("னுக்கு"):
         return cleaned[: -len("னுக்கு")] + "ன்"
     if cleaned.endswith("லுக்கு") and len(cleaned) > len("லுக்கு"):
         return cleaned[: -len("லுக்கு")] + "ல்"
-    for suffix in ("க்கு", "உக்கு", "-ku", "ku"):
+    for suffix in ("க்கு", "உக்கு", "-ku", "ku", "கு"):
         if cleaned.endswith(suffix) and len(cleaned) > len(suffix) + 1:
             return cleaned[: -len(suffix)].strip()
     return cleaned

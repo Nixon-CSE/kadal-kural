@@ -51,6 +51,19 @@ def range_confidence(value: int, band: ValueRange) -> float:
     return round(max(AMOUNT_CONFIDENCE_FLOOR, score), 3)
 
 
+def _dative_phrase_end(words: List[str]) -> int:
+    """
+    Length of the shortest leading run of ``words`` that ends in a dative case suffix, or 0
+    when none does. Checked on the joined phrase, so a detached Tanglish 'ku' ('Senthil ku')
+    counts as well as a glued one ('செந்தில்கு').
+    """
+    for end in range(1, len(words) + 1):
+        phrase = " ".join(words[:end])
+        if strip_tamil_dative_suffix(phrase) != phrase:
+            return end
+    return 0
+
+
 class BilingualCatalogMatcher:
     """Matches Tamil and Latin script buyer and SKU phrases against a domain catalog."""
 
@@ -211,7 +224,11 @@ class BilingualCatalogMatcher:
                     heard_unit = CANONICAL_UNIT_MAP[candidate_unit]
                     unit_end_idx = qty_token_idx + 1
 
-            buyer_phrase = " ".join(tokens[:qty_token_idx]).strip()
+            # Only a dative phrase names the buyer; without one the buyer stays unresolved (or,
+            # in a மட்டும் override, comes from the held trade) and the words before the
+            # quantity are the SKU ('வஞ்சரம் 500 ரேட்டு' must not fuzzy-match a buyer).
+            buyer_end = _dative_phrase_end(tokens[:qty_token_idx])
+            buyer_phrase = " ".join(tokens[:buyer_end])
             buyer, buyer_conf = self.resolve_buyer(buyer_phrase)
             if buyer is None and held_context and is_override:
                 buyer = self.buyers.get(held_context.buyer_id)
@@ -220,7 +237,7 @@ class BilingualCatalogMatcher:
             sku_end_idx = numeric_positions[1][0] if len(numeric_positions) >= 2 else len(tokens)
             sku_tokens = [
                 t
-                for t in tokens[unit_end_idx + 1 : sku_end_idx]
+                for t in tokens[buyer_end:qty_token_idx] + tokens[unit_end_idx + 1 : sku_end_idx]
                 if t.lower() not in BARGE_IN_OVERRIDE_MARKERS
                 and t.lower() not in TRAILING_LEDGER_VERBS
             ]
