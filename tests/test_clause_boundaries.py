@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple
 import pytest
 
 from benchmark.corpus import build_corpus
-from kadal_kural.config import RATE_UNIT_MISMATCH_CONFIDENCE, AppSettings
+from kadal_kural.config import LEFTOVER_NUMBER_CONFIDENCE, RATE_UNIT_MISMATCH_CONFIDENCE, AppSettings
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.models import LedgerEventStatus, TradeIntent
 from kadal_kural.domain.normalizer import split_multi_trade_clauses
@@ -38,7 +38,7 @@ def _trades(intents: List[TradeIntent]) -> List[Tuple[object, ...]]:
 
 
 def _split(matcher: BilingualCatalogMatcher, text: str) -> List[str]:
-    return split_multi_trade_clauses(text, matcher._buyer_phrase_length)
+    return matcher._split_clauses(text)
 
 
 # ------------------------------------------------------------------------- merged real transcripts
@@ -195,6 +195,40 @@ def test_buyer_name_before_any_number_does_not_split(matcher: BilingualCatalogMa
 def test_unknown_dative_word_mid_clause_is_not_a_boundary(matcher: BilingualCatalogMatcher) -> None:
     text = "செந்திலுக்கு 10 கிலோ வஞ்சரம் 800 ராமனுக்கு 5 கிலோ"
     assert _split(matcher, text) == [text]
+
+
+@pytest.mark.parametrize("word", ["கடைக்கு", "வீட்டுக்கு", "ஹார்பருக்கு", "அவனுக்கு"])
+def test_everyday_dative_word_mid_clause_is_not_a_boundary(word: str, matcher: BilingualCatalogMatcher) -> None:
+    # Both sides would be complete trades if this were a buyer; it scores too low to be one.
+    text = f"செந்திலுக்கு 10 கிலோ வஞ்சரம் 800 {word} 5 கிலோ டைகர் பிரான் 560"
+    assert _split(matcher, text) == [text]
+
+
+def test_fuzzy_buyer_split_that_leaves_an_incomplete_half_does_not_split(
+    matcher: BilingualCatalogMatcher,
+) -> None:
+    # 'செந்திலி சிவக்கு' scores 0.84, over the boundary bar, but '... 5' alone has no SKU or rate.
+    text = "செந்திலுக்கு 10 கிலோ வஞ்சரம் 800 செந்திலி சிவக்கு 5"
+    assert _split(matcher, text) == [text]
+    (intent,) = matcher.parse_utterance(text)
+    assert intent.overall_confidence <= LEFTOVER_NUMBER_CONFIDENCE  # held whole, never half-booked
+
+
+def test_fuzzy_buyer_split_needs_the_first_half_complete_too(matcher: BilingualCatalogMatcher) -> None:
+    text = "செந்திலுக்கு 10 கிலோ வஞ்சரம் செந்திலி சிவக்கு 40 கிலோ வஞ்சரம் 600"
+    assert _split(matcher, text) == [text]
+
+
+def test_multi_20_still_splits_at_its_fuzzy_buyer(matcher: BilingualCatalogMatcher) -> None:
+    assert _split(matcher, MERGED_TRANSCRIPTS["multi_20"]) == [
+        "செந்திலுக்கு 30 கிலோ வஞ்சரம் 600 வேட்டு",
+        "செந்திலி சிவக்கு 40 கிலோ வஞ்சரம் 600 வேட்டு",
+    ]
+
+
+def test_exact_buyer_split_does_not_need_complete_halves(matcher: BilingualCatalogMatcher) -> None:
+    text = "செந்திலுக்கு 10 கிலோ வஞ்சரம் குமரனுக்கு 5 கிலோ"
+    assert _split(matcher, text) == ["செந்திலுக்கு 10 கிலோ வஞ்சரம்", "குமரனுக்கு 5 கிலோ"]
 
 
 def test_misspelled_rate_word_is_not_a_terminator() -> None:
