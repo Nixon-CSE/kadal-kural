@@ -582,7 +582,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
           <td>₹${e.trade_value_inr.toLocaleString("en-IN")}</td>
           <td class="${e.status}">${e.status}</td>
           <td>${(e.confidence * 100).toFixed(0)}%</td>
-          <td>${e.upi_payment_uri ? `<a href="${e.upi_payment_uri}" style="color:#38bdf8;">UPI Link</a>` : "-"}</td>
+          <td>${e.upi_link_visible ? `<a href="${e.upi_payment_uri}" style="color:#38bdf8;">UPI Link</a>` : "-"}</td>
         </tr>
       `).join("");
     }

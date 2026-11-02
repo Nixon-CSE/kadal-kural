@@ -9,6 +9,10 @@ from typing import Any, Dict, List, Optional
 
 from kadal_kural.domain.models import BuyerProfile, LedgerEventStatus
 
+# Only a committed trade is payable; holds, clarifications and undo rows never get a UPI link.
+_UPI_PAYABLE_STATUSES = frozenset(
+    {LedgerEventStatus.BOOKED.value, LedgerEventStatus.BOOKED_AFTER_BARGE_IN.value}
+)
 
 class AppendOnlyLedgerRepository:
     """
@@ -58,10 +62,14 @@ class AppendOnlyLedgerRepository:
                     confidence REAL NOT NULL,
                     raw_utterance TEXT NOT NULL,
                     normalized_clause TEXT NOT NULL,
-                    upi_payment_uri TEXT NOT NULL
+                    upi_payment_uri TEXT NOT NULL,
+                    voids_event_id INTEGER
                 );
                 """
             )
+            columns = {str(r["name"]) for r in cur.execute("PRAGMA table_info(ledger_events)")}
+            if "voids_event_id" not in columns:  # ledger created before undo rows linked their trade
+                cur.execute("ALTER TABLE ledger_events ADD COLUMN voids_event_id INTEGER")
             for buyer in self._seed_buyers:
                 cur.execute(
                     """
@@ -108,6 +116,7 @@ class AppendOnlyLedgerRepository:
         normalized_clause: str,
         upi_payment_uri: str,
         commit_balance: bool,
+        voids_event_id: Optional[int] = None,
     ) -> int:
         now_str = time.strftime("%H:%M:%S")
         with self._lock:
@@ -122,9 +131,10 @@ class AppendOnlyLedgerRepository:
                 INSERT INTO ledger_events (
                     created_at, buyer_id, buyer_name, sku_name, quantity, unit,
                     rate_inr, trade_value_inr, previous_balance_inr, projected_balance_inr,
-                    credit_limit_inr, status, confidence, raw_utterance, normalized_clause, upi_payment_uri
+                    credit_limit_inr, status, confidence, raw_utterance, normalized_clause, upi_payment_uri,
+                    voids_event_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     now_str,
@@ -143,6 +153,7 @@ class AppendOnlyLedgerRepository:
                     raw_utterance,
                     normalized_clause,
                     upi_payment_uri,
+                    voids_event_id,
                 ),
             )
             self._conn.commit()
@@ -189,6 +200,7 @@ class AppendOnlyLedgerRepository:
                 normalized_clause="VOICE_COMPENSATING_UNDO",
                 upi_payment_uri="",
                 commit_balance=True,
+                voids_event_id=int(last_row["event_id"]),
             )
             return {
                 "event_id": event_id,
@@ -225,4 +237,16 @@ class AppendOnlyLedgerRepository:
                     "SELECT * FROM ledger_events ORDER BY event_id DESC LIMIT 30"
                 ).fetchall()
             ]
-            return {"buyers": buyers, "events": events}
+            voided_ids = {
+                int(r["voids_event_id"])
+                for r in self._conn.execute(
+                    "SELECT voids_event_id FROM ledger_events WHERE voids_event_id IS NOT NULL"
+                ).fetchall()
+            }
+        for event in events:
+            event["upi_link_visible"] = (
+                event["status"] in _UPI_PAYABLE_STATUSES
+                and bool(event["upi_payment_uri"])
+                and int(event["event_id"]) not in voided_ids
+            )
+        return {"buyers": buyers, "events": events}
