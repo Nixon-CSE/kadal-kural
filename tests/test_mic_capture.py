@@ -54,7 +54,12 @@ class FakePrisma:
     """Handshake, one transcript once audio arrived, then idle."""
 
     def __init__(self) -> None:
-        self.audio = asyncio.Event()
+        self._audio: asyncio.Event | None = None
+
+    def _get_audio_event(self) -> asyncio.Event:
+        if self._audio is None:
+            self._audio = asyncio.Event()
+        return self._audio
 
     def __call__(self, url: str, **kwargs: Any) -> "FakePrisma":
         return self
@@ -70,10 +75,10 @@ class FakePrisma:
 
     async def send(self, data: Any) -> None:
         if isinstance(data, bytes):
-            self.audio.set()
+            self._get_audio_event().set()
 
     async def __aiter__(self) -> AsyncIterator[str]:
-        await self.audio.wait()
+        await self._get_audio_event().wait()
         yield json.dumps({"type": "transcript", "text": "குமரனுக்கு 20 கிலோ", "latency": 190, "is_final": True})
         await asyncio.sleep(3600)
 
