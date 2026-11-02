@@ -66,6 +66,16 @@ def _dative_phrase_end(words: List[str]) -> int:
     return 0
 
 
+def _is_complete_intent(intent: TradeIntent) -> bool:
+    """Buyer, SKU, quantity and rate all resolved (confidence aside: the gate decides that)."""
+    return (
+        intent.buyer_id is not None
+        and intent.sku_id is not None
+        and intent.quantity is not None
+        and intent.rate_inr is not None
+    )
+
+
 def _names(entity: Union[BuyerProfile, SKUProfile]) -> Set[str]:
     """Every registered name of a buyer or SKU (canonical, Tamil spoken form, aliases), normalised."""
     return {
@@ -190,23 +200,59 @@ class BilingualCatalogMatcher:
                 return end
         return 0
 
-    def _buyer_phrase_length(self, previous: Optional[str], token: str) -> int:
-        """
-        How many words ending at ``token`` form a buyer name in the dative form (0 if none).
-        Exact aliases win over fuzzy ones, and the one-word form is tried first, so a word
-        before the name isn't swallowed into it ('வேட்டு குமரனுக்கு' is just 'குமரனுக்கு').
-        """
+    @staticmethod
+    def _dative_candidates(previous: Optional[str], token: str) -> List[Tuple[int, str]]:
+        """The one- and two-word phrases ending at ``token`` that are in the dative form."""
         candidates = [(1, token)]
         if previous is not None:
             candidates.append((2, f"{previous} {token}"))
-        datives = [(n, phrase) for n, phrase in candidates if strip_tamil_dative_suffix(phrase) != phrase]
-        for n, phrase in datives:
+        return [(n, phrase) for n, phrase in candidates if strip_tamil_dative_suffix(phrase) != phrase]
+
+    def _exact_buyer_phrase_length(self, previous: Optional[str], token: str) -> int:
+        """
+        How many words ending at ``token`` form an exact buyer alias in the dative form (0 if
+        none). The one-word form is tried first, so a word before the name isn't swallowed into
+        it ('வேட்டு குமரனுக்கு' is just 'குமரனுக்கு').
+        """
+        for n, phrase in self._dative_candidates(previous, token):
             if strip_tamil_dative_suffix(phrase).lower() in self._buyer_alias_index:
                 return n
-        for n, phrase in datives:
+        return 0
+
+    def _fuzzy_buyer_phrase_length(self, previous: Optional[str], token: str) -> int:
+        """Like _exact_buyer_phrase_length, for a dative phrase scoring at least the boundary bar."""
+        for n, phrase in self._dative_candidates(previous, token):
             if self.resolve_buyer(phrase)[1] >= BUYER_BOUNDARY_MIN_CONFIDENCE:
                 return n
         return 0
+
+    def _split_clauses(
+        self, normalized: str, held_context: Optional[HeldTradeContext] = None
+    ) -> List[str]:
+        """
+        One clause per trade: split at rate words and exact-alias dative buyers, then at a
+        fuzzy dative buyer ('செந்திலி சிவக்கு', 0.84) only when both clauses it would leave are
+        complete trades. A fuzzy match is a guess, so it may separate two whole trades but never
+        cut one in half; a rejected split is held whole by the leftover-number check instead.
+        """
+        clauses: List[str] = []
+        for clause in split_multi_trade_clauses(normalized, self._exact_buyer_phrase_length):
+            pieces = split_multi_trade_clauses(clause, self._fuzzy_buyer_phrase_length)
+            kept = pieces[:1]
+            for piece in pieces[1:]:
+                if self._is_complete_clause(kept[-1], held_context) and self._is_complete_clause(
+                    piece, held_context
+                ):
+                    kept.append(piece)
+                else:
+                    kept[-1] = f"{kept[-1]} {piece}"
+            clauses.extend(kept)
+        return clauses
+
+    def _is_complete_clause(self, clause: str, held_context: Optional[HeldTradeContext]) -> bool:
+        """True when ``clause`` alone is a trade with buyer, SKU, quantity and rate all resolved."""
+        intent = self._parse_clause(clause, clause, held_context)
+        return intent is not None and _is_complete_intent(intent)
 
     def is_complete_utterance(self, text: str) -> bool:
         """
@@ -218,11 +264,8 @@ class BilingualCatalogMatcher:
         if not ends_with_rate_terminator(normalized):
             return False
         intents = self.parse_normalized(normalized, text)
-        clauses = split_multi_trade_clauses(normalized, self._buyer_phrase_length)
-        return bool(intents) and len(intents) == len(clauses) and all(
-            i.buyer_id is not None and i.sku_id is not None and i.quantity is not None and i.rate_inr is not None
-            for i in intents
-        )
+        clauses = self._split_clauses(normalized)
+        return bool(intents) and len(intents) == len(clauses) and all(_is_complete_intent(i) for i in intents)
 
     def awaits_rate(self, text: str) -> bool:
         """
@@ -263,119 +306,122 @@ class BilingualCatalogMatcher:
         held_context: Optional[HeldTradeContext] = None,
     ) -> List[TradeIntent]:
         """The match stage: parse_utterance on text that normalize() already resolved."""
-        clauses = split_multi_trade_clauses(normalized_full, self._buyer_phrase_length)
         intents: List[TradeIntent] = []
-
-        for clause in clauses:
-            tokens = clause.split()
-            # normalize_hybrid_tamil_numerals already resolves Prisma's '₹'/comma-decorated
-            # digit tokens, but strip_numeral_decoration is applied again here defensively
-            # in case any decorated token slips through unresolved (e.g. a shape not yet
-            # covered by that normalizer) rather than silently vanishing from numeric_positions.
-            numeric_positions: List[Tuple[int, int]] = []
-            for i, tok in enumerate(tokens):
-                bare_digits = strip_numeral_decoration(tok)
-                if bare_digits is not None:
-                    numeric_positions.append((i, int(bare_digits)))
-            if not numeric_positions:
-                continue
-
-            is_override = any(tok.lower() in BARGE_IN_OVERRIDE_MARKERS for tok in tokens)
-            qty_token_idx, quantity = numeric_positions[0]
-            rate_inr: Optional[int] = (
-                numeric_positions[1][1]
-                if len(numeric_positions) >= 2
-                else (held_context.rate_inr if (held_context and is_override) else None)
-            )
-
-            # An unrecognised word after the quantity leaves unit unresolved; it falls back
-            # to the matched SKU's default_unit below, at reduced unit confidence.
-            heard_unit: Optional[str] = None
-            unit_end_idx = qty_token_idx
-            if qty_token_idx + 1 < len(tokens):
-                candidate_unit = tokens[qty_token_idx + 1].lower()
-                if candidate_unit in CANONICAL_UNIT_MAP:
-                    heard_unit = CANONICAL_UNIT_MAP[candidate_unit]
-                    unit_end_idx = qty_token_idx + 1
-
-            # Only a dative phrase, or a full registered buyer name opening the clause exactly,
-            # names the buyer; without one the buyer stays unresolved (or, in a மட்டும்
-            # override, comes from the held trade) and the words before the quantity are the
-            # SKU ('வஞ்சரம் 500 ரேட்டு' must not fuzzy-match a buyer).
-            leading = tokens[:qty_token_idx]
-            buyer_end = _dative_phrase_end(leading) or self._full_buyer_name_end(leading)
-            buyer_phrase = " ".join(tokens[:buyer_end])
-            buyer, buyer_conf = self.resolve_buyer(buyer_phrase)
-            if buyer is None and held_context and is_override:
-                buyer = self.buyers.get(held_context.buyer_id)
-                buyer_conf = 0.92
-
-            sku_end_idx = numeric_positions[1][0] if len(numeric_positions) >= 2 else len(tokens)
-            # A unit word right before the rate quotes it per that unit ('கிலோ 740', 'கிலோக்கு
-            # 740'); it is not part of the SKU name. The quantity's own unit word doesn't count.
-            rate_per_unit: Optional[str] = None
-            if len(numeric_positions) >= 2 and sku_end_idx - 1 > unit_end_idx:
-                rate_per_unit = per_unit_word(tokens[sku_end_idx - 1])
-                if rate_per_unit is not None:
-                    sku_end_idx -= 1
-            sku_tokens = [
-                t
-                for t in tokens[buyer_end:qty_token_idx] + tokens[unit_end_idx + 1 : sku_end_idx]
-                if t.lower() not in BARGE_IN_OVERRIDE_MARKERS
-                and t.lower() not in TRAILING_LEDGER_VERBS
-            ]
-            sku_phrase = " ".join(sku_tokens).strip()
-            sku, sku_conf = self.resolve_sku(sku_phrase)
-            sku_inherited = False
-            if sku is None and held_context and is_override:
-                sku = self.skus.get(held_context.sku_id)
-                sku_conf = 0.92
-                sku_inherited = sku is not None
-
-            if heard_unit is not None:
-                unit, unit_conf = heard_unit, 1.0
-            elif sku is not None:
-                unit = sku.default_unit
-                # A barge-in override inherits the held trade's SKU, so its default unit is
-                # carried context (same 0.92 as the inherited SKU), not a guess.
-                unit_conf = sku_conf if sku_inherited else self.assumed_unit_confidence
-            else:
-                unit, unit_conf = NO_SKU_FALLBACK_UNIT, self.assumed_unit_confidence
-
-            total_val = (quantity or 0) * (rate_inr or 0)
-            qty_conf = range_confidence(quantity, self.unit_quantity_ranges[unit])
-            if rate_inr is None or rate_inr <= 0:
-                rate_conf = 0.0
-            elif sku is None:
-                rate_conf = 1.0  # no SKU, no band to check against; sku_conf already gates it
-            elif unit not in sku.rate_range_inr:
-                rate_conf = UNPRICED_UNIT_RATE_CONFIDENCE  # e.g. Vanjaram quoted per box
-            else:
-                rate_conf = range_confidence(rate_inr, sku.rate_range_inr[unit])
-            if rate_per_unit is not None and rate_per_unit != unit:
-                rate_conf = min(rate_conf, RATE_UNIT_MISMATCH_CONFIDENCE)  # 20 kg at 740 per box
-            overall_conf = min(buyer_conf, sku_conf, unit_conf, qty_conf, rate_conf)
-            if any(value != rate_inr for _, value in numeric_positions[2:]):
-                overall_conf = min(overall_conf, LEFTOVER_NUMBER_CONFIDENCE)
-            overall_conf = round(overall_conf, 3)
-
-            intents.append(
-                TradeIntent(
-                    raw_utterance=raw_utterance,
-                    normalized_clause=clause,
-                    buyer_id=buyer.buyer_id if buyer else None,
-                    buyer_name=buyer.canonical_name if buyer else (buyer_phrase or "Unknown Buyer"),
-                    buyer_confidence=buyer_conf,
-                    sku_id=sku.sku_id if sku else None,
-                    sku_name=sku.canonical_name if sku else (sku_phrase or "Unknown Item"),
-                    sku_confidence=sku_conf,
-                    quantity=quantity,
-                    unit=unit,
-                    rate_inr=rate_inr,
-                    total_value_inr=total_val,
-                    overall_confidence=overall_conf,
-                    is_barge_in_override=is_override,
-                )
-            )
-
+        for clause in self._split_clauses(normalized_full, held_context):
+            intent = self._parse_clause(clause, raw_utterance, held_context)
+            if intent is not None:
+                intents.append(intent)
         return intents
+
+    def _parse_clause(
+        self, clause: str, raw_utterance: str, held_context: Optional[HeldTradeContext]
+    ) -> Optional[TradeIntent]:
+        """One clause's trade, or None when the clause holds no number."""
+        tokens = clause.split()
+        # normalize_hybrid_tamil_numerals already resolves Prisma's '₹'/comma-decorated
+        # digit tokens, but strip_numeral_decoration is applied again here defensively
+        # in case any decorated token slips through unresolved (e.g. a shape not yet
+        # covered by that normalizer) rather than silently vanishing from numeric_positions.
+        numeric_positions: List[Tuple[int, int]] = []
+        for i, tok in enumerate(tokens):
+            bare_digits = strip_numeral_decoration(tok)
+            if bare_digits is not None:
+                numeric_positions.append((i, int(bare_digits)))
+        if not numeric_positions:
+            return None
+
+        is_override = any(tok.lower() in BARGE_IN_OVERRIDE_MARKERS for tok in tokens)
+        qty_token_idx, quantity = numeric_positions[0]
+        rate_inr: Optional[int] = (
+            numeric_positions[1][1]
+            if len(numeric_positions) >= 2
+            else (held_context.rate_inr if (held_context and is_override) else None)
+        )
+
+        # An unrecognised word after the quantity leaves unit unresolved; it falls back
+        # to the matched SKU's default_unit below, at reduced unit confidence.
+        heard_unit: Optional[str] = None
+        unit_end_idx = qty_token_idx
+        if qty_token_idx + 1 < len(tokens):
+            candidate_unit = tokens[qty_token_idx + 1].lower()
+            if candidate_unit in CANONICAL_UNIT_MAP:
+                heard_unit = CANONICAL_UNIT_MAP[candidate_unit]
+                unit_end_idx = qty_token_idx + 1
+
+        # Only a dative phrase, or a full registered buyer name opening the clause exactly,
+        # names the buyer; without one the buyer stays unresolved (or, in a மட்டும்
+        # override, comes from the held trade) and the words before the quantity are the
+        # SKU ('வஞ்சரம் 500 ரேட்டு' must not fuzzy-match a buyer).
+        leading = tokens[:qty_token_idx]
+        buyer_end = _dative_phrase_end(leading) or self._full_buyer_name_end(leading)
+        buyer_phrase = " ".join(tokens[:buyer_end])
+        buyer, buyer_conf = self.resolve_buyer(buyer_phrase)
+        if buyer is None and held_context and is_override:
+            buyer = self.buyers.get(held_context.buyer_id)
+            buyer_conf = 0.92
+
+        sku_end_idx = numeric_positions[1][0] if len(numeric_positions) >= 2 else len(tokens)
+        # A unit word right before the rate quotes it per that unit ('கிலோ 740', 'கிலோக்கு
+        # 740'); it is not part of the SKU name. The quantity's own unit word doesn't count.
+        rate_per_unit: Optional[str] = None
+        if len(numeric_positions) >= 2 and sku_end_idx - 1 > unit_end_idx:
+            rate_per_unit = per_unit_word(tokens[sku_end_idx - 1])
+            if rate_per_unit is not None:
+                sku_end_idx -= 1
+        sku_tokens = [
+            t
+            for t in tokens[buyer_end:qty_token_idx] + tokens[unit_end_idx + 1 : sku_end_idx]
+            if t.lower() not in BARGE_IN_OVERRIDE_MARKERS
+            and t.lower() not in TRAILING_LEDGER_VERBS
+        ]
+        sku_phrase = " ".join(sku_tokens).strip()
+        sku, sku_conf = self.resolve_sku(sku_phrase)
+        sku_inherited = False
+        if sku is None and held_context and is_override:
+            sku = self.skus.get(held_context.sku_id)
+            sku_conf = 0.92
+            sku_inherited = sku is not None
+
+        if heard_unit is not None:
+            unit, unit_conf = heard_unit, 1.0
+        elif sku is not None:
+            unit = sku.default_unit
+            # A barge-in override inherits the held trade's SKU, so its default unit is
+            # carried context (same 0.92 as the inherited SKU), not a guess.
+            unit_conf = sku_conf if sku_inherited else self.assumed_unit_confidence
+        else:
+            unit, unit_conf = NO_SKU_FALLBACK_UNIT, self.assumed_unit_confidence
+
+        total_val = (quantity or 0) * (rate_inr or 0)
+        qty_conf = range_confidence(quantity, self.unit_quantity_ranges[unit])
+        if rate_inr is None or rate_inr <= 0:
+            rate_conf = 0.0
+        elif sku is None:
+            rate_conf = 1.0  # no SKU, no band to check against; sku_conf already gates it
+        elif unit not in sku.rate_range_inr:
+            rate_conf = UNPRICED_UNIT_RATE_CONFIDENCE  # e.g. Vanjaram quoted per box
+        else:
+            rate_conf = range_confidence(rate_inr, sku.rate_range_inr[unit])
+        if rate_per_unit is not None and rate_per_unit != unit:
+            rate_conf = min(rate_conf, RATE_UNIT_MISMATCH_CONFIDENCE)  # 20 kg at 740 per box
+        overall_conf = min(buyer_conf, sku_conf, unit_conf, qty_conf, rate_conf)
+        if any(value != rate_inr for _, value in numeric_positions[2:]):
+            overall_conf = min(overall_conf, LEFTOVER_NUMBER_CONFIDENCE)
+        overall_conf = round(overall_conf, 3)
+
+        return TradeIntent(
+            raw_utterance=raw_utterance,
+            normalized_clause=clause,
+            buyer_id=buyer.buyer_id if buyer else None,
+            buyer_name=buyer.canonical_name if buyer else (buyer_phrase or "Unknown Buyer"),
+            buyer_confidence=buyer_conf,
+            sku_id=sku.sku_id if sku else None,
+            sku_name=sku.canonical_name if sku else (sku_phrase or "Unknown Item"),
+            sku_confidence=sku_conf,
+            quantity=quantity,
+            unit=unit,
+            rate_inr=rate_inr,
+            total_value_inr=total_val,
+            overall_confidence=overall_conf,
+            is_barge_in_override=is_override,
+        )
