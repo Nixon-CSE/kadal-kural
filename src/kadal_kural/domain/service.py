@@ -11,6 +11,7 @@ from kadal_kural.config import (
     SPAN_MATCH,
     SPAN_NORMALIZE,
     SPAN_UNDO,
+    UNDO_ALREADY_CANCELLED_TAMIL,
     UNRESOLVED_BUYER_ID,
     UNRESOLVED_BUYER_LABEL,
     UNRESOLVED_SKU_LABEL,
@@ -100,10 +101,13 @@ class PreDispatchCreditFirewallService:
             with recorded_span(spans, SPAN_UNDO):
                 undo_info = self.repository.undo_last_booked_trade(raw_utterance)
             if undo_info is not None:
-                tts_msg = (
-                    f"கடைசி ஆர்டர் ரத்து செய்யப்பட்டது. {undo_info['tamil_speak_name']} "
-                    f"புதிய பாக்கி {format_inr_for_timbre_prosody(undo_info['restored_balance_inr'])}."
-                )
+                if undo_info["already_voided"]:  # no row written; event_id is the earlier void
+                    tts_msg = UNDO_ALREADY_CANCELLED_TAMIL
+                else:
+                    tts_msg = (
+                        f"கடைசி ஆர்டர் ரத்து செய்யப்பட்டது. {undo_info['tamil_speak_name']} "
+                        f"புதிய பாக்கி {format_inr_for_timbre_prosody(undo_info['restored_balance_inr'])}."
+                    )
                 undo_decision = CreditGateDecision(
                     event_id=undo_info["event_id"],
                     status=LedgerEventStatus.VOIDED_BY_UNDO,

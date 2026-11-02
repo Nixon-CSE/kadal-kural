@@ -138,6 +138,7 @@ class AppendOnlyLedgerRepository:
     ) -> int:
         now_str = time.strftime("%H:%M:%S")
         with self._lock:
+            owns_transaction = not self._conn.in_transaction  # else a caller's transaction commits
             cur = self._conn.cursor()
             if commit_balance:
                 cur.execute(
@@ -178,66 +179,103 @@ class AppendOnlyLedgerRepository:
                     sku_guess_confidence,
                 ),
             )
-            self._conn.commit()
+            if owns_transaction:
+                self._conn.commit()
             return int(cur.lastrowid or 0)
 
     def undo_last_booked_trade(self, raw_utterance: str) -> Optional[Dict[str, Any]]:
         """
         Compensating transaction for voice undo ('கடைசி ஆர்டர் கேன்சல்' / 'last trade cancel').
         Never deletes rows; writes an immutable VOIDED_BY_UNDO compensating entry.
+
+        Applies only to the most recent booking. If an earlier undo already voided it, nothing
+        is written and the result has ``already_voided`` True, the existing void row's
+        event_id and the unchanged balance. None when the ledger holds no booking.
+
+        The read, the already-voided check and the void row share one BEGIN IMMEDIATE
+        transaction: it takes SQLite's write lock up front, so a concurrent undo, even on
+        another connection, waits and then sees the void instead of voiding the trade again.
         """
         with self._lock:
-            cur = self._conn.cursor()
-            last_row = cur.execute(
-                """
-                SELECT * FROM ledger_events
-                WHERE status IN (?, ?)
-                ORDER BY event_id DESC LIMIT 1
-                """,
-                (LedgerEventStatus.BOOKED.value, LedgerEventStatus.BOOKED_AFTER_BARGE_IN.value),
-            ).fetchone()
-            if last_row is None:
-                return None
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                result = self._undo_last_booking(raw_utterance)
+            except BaseException:
+                self._conn.rollback()
+                raise
+            self._conn.commit()
+            return result
 
-            buyer_id = str(last_row["buyer_id"])
-            buyer = self.get_buyer_row(buyer_id)
-            current_bal = int(buyer["running_balance_inr"])
-            reversed_val = int(last_row["trade_value_inr"])
-            restored_bal = max(0, current_bal - reversed_val)
+    def _undo_last_booking(self, raw_utterance: str) -> Optional[Dict[str, Any]]:
+        """undo_last_booked_trade's body; runs inside its transaction."""
+        cur = self._conn.cursor()
+        last_row = cur.execute(
+            """
+            SELECT * FROM ledger_events
+            WHERE status IN (?, ?)
+            ORDER BY event_id DESC LIMIT 1
+            """,
+            (LedgerEventStatus.BOOKED.value, LedgerEventStatus.BOOKED_AFTER_BARGE_IN.value),
+        ).fetchone()
+        if last_row is None:
+            return None
 
-            event_id = self.append_event_and_update_balance(
-                buyer_id=buyer_id,
-                buyer_name=str(last_row["buyer_name"]),
-                sku_name=str(last_row["sku_name"]),
-                quantity=int(last_row["quantity"]),
-                unit=str(last_row["unit"]),
-                rate_inr=int(last_row["rate_inr"]),
-                trade_value_inr=reversed_val,
-                previous_balance_inr=current_bal,
-                projected_balance_inr=restored_bal,
-                credit_limit_inr=int(buyer["credit_limit_inr"]),
-                status=LedgerEventStatus.VOIDED_BY_UNDO,
-                confidence=1.0,
-                raw_utterance=raw_utterance,
-                normalized_clause="VOICE_COMPENSATING_UNDO",
-                upi_payment_uri="",
-                commit_balance=True,
-                voids_event_id=int(last_row["event_id"]),
-            )
+        buyer_id = str(last_row["buyer_id"])
+        buyer = self.get_buyer_row(buyer_id)
+        current_bal = int(buyer["running_balance_inr"])
+        booking_info: Dict[str, Any] = {
+            "buyer_id": buyer_id,
+            "buyer_name": str(last_row["buyer_name"]),
+            "tamil_speak_name": str(buyer["tamil_speak_name"]),
+            "sku_name": str(last_row["sku_name"]),
+            "quantity": int(last_row["quantity"]),
+            "unit": str(last_row["unit"]),
+            "rate_inr": int(last_row["rate_inr"]),
+            "previous_balance_inr": current_bal,
+            "credit_limit_inr": int(buyer["credit_limit_inr"]),
+        }
+
+        existing_void = cur.execute(
+            "SELECT event_id FROM ledger_events WHERE voids_event_id = ? LIMIT 1",
+            (int(last_row["event_id"]),),
+        ).fetchone()
+        if existing_void is not None:
             return {
-                "event_id": event_id,
-                "buyer_id": buyer_id,
-                "buyer_name": str(last_row["buyer_name"]),
-                "tamil_speak_name": str(buyer["tamil_speak_name"]),
-                "sku_name": str(last_row["sku_name"]),
-                "quantity": int(last_row["quantity"]),
-                "unit": str(last_row["unit"]),
-                "rate_inr": int(last_row["rate_inr"]),
-                "reversed_value_inr": reversed_val,
-                "previous_balance_inr": current_bal,
-                "restored_balance_inr": restored_bal,
-                "credit_limit_inr": int(buyer["credit_limit_inr"]),
+                **booking_info,
+                "event_id": int(existing_void["event_id"]),
+                "already_voided": True,
+                "reversed_value_inr": 0,
+                "restored_balance_inr": current_bal,
             }
+
+        reversed_val = int(last_row["trade_value_inr"])
+        restored_bal = max(0, current_bal - reversed_val)
+        event_id = self.append_event_and_update_balance(
+            buyer_id=buyer_id,
+            buyer_name=booking_info["buyer_name"],
+            sku_name=booking_info["sku_name"],
+            quantity=booking_info["quantity"],
+            unit=booking_info["unit"],
+            rate_inr=booking_info["rate_inr"],
+            trade_value_inr=reversed_val,
+            previous_balance_inr=current_bal,
+            projected_balance_inr=restored_bal,
+            credit_limit_inr=booking_info["credit_limit_inr"],
+            status=LedgerEventStatus.VOIDED_BY_UNDO,
+            confidence=1.0,
+            raw_utterance=raw_utterance,
+            normalized_clause="VOICE_COMPENSATING_UNDO",
+            upi_payment_uri="",
+            commit_balance=True,
+            voids_event_id=int(last_row["event_id"]),
+        )
+        return {
+            **booking_info,
+            "event_id": event_id,
+            "already_voided": False,
+            "reversed_value_inr": reversed_val,
+            "restored_balance_inr": restored_bal,
+        }
 
     def reset_to_seed_state(self) -> None:
         with self._lock:

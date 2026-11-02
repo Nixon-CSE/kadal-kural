@@ -64,6 +64,9 @@ NO_SKU_FALLBACK_UNIT: str = "box"
 # Spoken whenever a turn has nothing else to say: a clarification, or no trade parsed at all.
 CLARIFICATION_PROMPT_TAMIL: str = "பெயர் அல்லது விலை தெளிவாக இல்லை. தயவுசெய்து மீண்டும் சொல்லுங்கள்."
 
+# Spoken when a voice undo finds the most recent booking already cancelled: nothing is written.
+UNDO_ALREADY_CANCELLED_TAMIL: str = "கடைசி ஆர்டர் ஏற்கனவே ரத்து செய்யப்பட்டது."
+
 # Written to a held trade's buyer / SKU name when that match scored below the confidence gate,
 # so the audit log never presents a fuzzy guess as the party or item. The guess and its score
 # are kept in the row's buyer_guess* / sku_guess* columns for debugging.
