@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 from rapidfuzz import fuzz, process
 
 from kadal_kural.config import (
@@ -64,6 +64,51 @@ def _dative_phrase_end(words: List[str]) -> int:
     return 0
 
 
+def _names(entity: Union[BuyerProfile, SKUProfile]) -> Set[str]:
+    """Every registered name of a buyer or SKU (canonical, Tamil spoken form, aliases), normalised."""
+    return {
+        name.lower().strip()
+        for name in (entity.canonical_name, entity.tamil_speak_name, *entity.aliases)
+    }
+
+
+def _reject_buyer_names_containing_sku_names(
+    buyers: Iterable[BuyerProfile], skus: Iterable[SKUProfile]
+) -> None:
+    """
+    Fails catalog load when a buyer name equals or contains a SKU name, so a product word can
+    never be read as a buyer (ledger 19:16:04 booked 'வஞ்சரம்' to Kumaran).
+    """
+    sku_names = set().union(*(_names(s) for s in skus))
+    for buyer in buyers:
+        for buyer_name in _names(buyer):
+            clashes = sorted(s for s in sku_names if s in buyer_name)
+            if clashes:
+                raise ValueError(
+                    f"buyer {buyer.buyer_id} name {buyer_name!r} contains SKU name(s) {clashes}"
+                )
+
+
+def _full_buyer_name_index(buyers: Iterable[BuyerProfile]) -> Dict[str, str]:
+    """
+    Normalised full buyer names -> buyer_id: the names a clause may open with, no dative suffix
+    needed. A name made only of the leading words of a longer name of the same buyer is partial
+    ('செந்தில்' of 'செந்தில் சீஃபுட்ஸ்') and is left out, so it still needs the suffix.
+    """
+    index: Dict[str, str] = {}
+    for buyer in buyers:
+        names = _names(buyer)
+        for name in names:
+            words = name.split()
+            is_partial = any(
+                len(other.split()) > len(words) and other.split()[: len(words)] == words
+                for other in names
+            )
+            if not is_partial:
+                index[name] = buyer.buyer_id
+    return index
+
+
 class BilingualCatalogMatcher:
     """Matches Tamil and Latin script buyer and SKU phrases against a domain catalog."""
 
@@ -101,6 +146,9 @@ class BilingualCatalogMatcher:
             for alias in sku.aliases:
                 self._sku_alias_index[alias.lower().strip()] = sku.sku_id
 
+        _reject_buyer_names_containing_sku_names(self.buyers.values(), self.skus.values())
+        self._full_buyer_names: Dict[str, str] = _full_buyer_name_index(self.buyers.values())
+
     def resolve_buyer(self, raw_phrase: str) -> Tuple[Optional[BuyerProfile], float]:
         """Resolves a buyer phrase (after dative suffix stripping) with confidence [0.0, 1.0]."""
         cleaned = strip_tamil_dative_suffix(raw_phrase).lower().strip()
@@ -132,6 +180,13 @@ class BilingualCatalogMatcher:
         matched_alias, score, _ = result
         sku = self.skus[self._sku_alias_index[matched_alias]]
         return sku, round(float(score) / 100.0, 3)
+
+    def _full_buyer_name_end(self, words: List[str]) -> int:
+        """Word count of the longest full buyer name that ``words`` start with exactly, else 0."""
+        for end in range(len(words), 0, -1):
+            if " ".join(words[:end]).lower() in self._full_buyer_names:
+                return end
+        return 0
 
     def _buyer_phrase_length(self, previous: Optional[str], token: str) -> int:
         """
@@ -224,10 +279,12 @@ class BilingualCatalogMatcher:
                     heard_unit = CANONICAL_UNIT_MAP[candidate_unit]
                     unit_end_idx = qty_token_idx + 1
 
-            # Only a dative phrase names the buyer; without one the buyer stays unresolved (or,
-            # in a மட்டும் override, comes from the held trade) and the words before the
-            # quantity are the SKU ('வஞ்சரம் 500 ரேட்டு' must not fuzzy-match a buyer).
-            buyer_end = _dative_phrase_end(tokens[:qty_token_idx])
+            # Only a dative phrase, or a full registered buyer name opening the clause exactly,
+            # names the buyer; without one the buyer stays unresolved (or, in a மட்டும்
+            # override, comes from the held trade) and the words before the quantity are the
+            # SKU ('வஞ்சரம் 500 ரேட்டு' must not fuzzy-match a buyer).
+            leading = tokens[:qty_token_idx]
+            buyer_end = _dative_phrase_end(leading) or self._full_buyer_name_end(leading)
             buyer_phrase = " ".join(tokens[:buyer_end])
             buyer, buyer_conf = self.resolve_buyer(buyer_phrase)
             if buyer is None and held_context and is_override:
