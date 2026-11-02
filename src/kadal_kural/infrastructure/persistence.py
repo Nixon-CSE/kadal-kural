@@ -14,6 +14,15 @@ _UPI_PAYABLE_STATUSES = frozenset(
     {LedgerEventStatus.BOOKED.value, LedgerEventStatus.BOOKED_AFTER_BARGE_IN.value}
 )
 
+# Nullable ledger_events columns added after the first schema, with their SQLite types.
+_ADDED_LEDGER_COLUMNS: Dict[str, str] = {
+    "voids_event_id": "INTEGER",
+    "buyer_guess": "TEXT",
+    "buyer_guess_confidence": "REAL",
+    "sku_guess": "TEXT",
+    "sku_guess_confidence": "REAL",
+}
+
 class AppendOnlyLedgerRepository:
     """
     Guarantees zero destructive updates to historical ledger events.
@@ -63,13 +72,18 @@ class AppendOnlyLedgerRepository:
                     raw_utterance TEXT NOT NULL,
                     normalized_clause TEXT NOT NULL,
                     upi_payment_uri TEXT NOT NULL,
-                    voids_event_id INTEGER
+                    voids_event_id INTEGER,
+                    buyer_guess TEXT,
+                    buyer_guess_confidence REAL,
+                    sku_guess TEXT,
+                    sku_guess_confidence REAL
                 );
                 """
             )
             columns = {str(r["name"]) for r in cur.execute("PRAGMA table_info(ledger_events)")}
-            if "voids_event_id" not in columns:  # ledger created before undo rows linked their trade
-                cur.execute("ALTER TABLE ledger_events ADD COLUMN voids_event_id INTEGER")
+            for name, sql_type in _ADDED_LEDGER_COLUMNS.items():  # ledgers created before they existed
+                if name not in columns:
+                    cur.execute(f"ALTER TABLE ledger_events ADD COLUMN {name} {sql_type}")
             for buyer in self._seed_buyers:
                 cur.execute(
                     """
@@ -117,6 +131,10 @@ class AppendOnlyLedgerRepository:
         upi_payment_uri: str,
         commit_balance: bool,
         voids_event_id: Optional[int] = None,
+        buyer_guess: Optional[str] = None,
+        buyer_guess_confidence: Optional[float] = None,
+        sku_guess: Optional[str] = None,
+        sku_guess_confidence: Optional[float] = None,
     ) -> int:
         now_str = time.strftime("%H:%M:%S")
         with self._lock:
@@ -132,9 +150,9 @@ class AppendOnlyLedgerRepository:
                     created_at, buyer_id, buyer_name, sku_name, quantity, unit,
                     rate_inr, trade_value_inr, previous_balance_inr, projected_balance_inr,
                     credit_limit_inr, status, confidence, raw_utterance, normalized_clause, upi_payment_uri,
-                    voids_event_id
+                    voids_event_id, buyer_guess, buyer_guess_confidence, sku_guess, sku_guess_confidence
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     now_str,
@@ -154,6 +172,10 @@ class AppendOnlyLedgerRepository:
                     normalized_clause,
                     upi_payment_uri,
                     voids_event_id,
+                    buyer_guess,
+                    buyer_guess_confidence,
+                    sku_guess,
+                    sku_guess_confidence,
                 ),
             )
             self._conn.commit()

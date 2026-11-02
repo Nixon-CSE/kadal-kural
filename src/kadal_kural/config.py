@@ -64,6 +64,13 @@ NO_SKU_FALLBACK_UNIT: str = "box"
 # Spoken whenever a turn has nothing else to say: a clarification, or no trade parsed at all.
 CLARIFICATION_PROMPT_TAMIL: str = "பெயர் அல்லது விலை தெளிவாக இல்லை. தயவுசெய்து மீண்டும் சொல்லுங்கள்."
 
+# Written to a held trade's buyer / SKU name when that match scored below the confidence gate,
+# so the audit log never presents a fuzzy guess as the party or item. The guess and its score
+# are kept in the row's buyer_guess* / sku_guess* columns for debugging.
+UNRESOLVED_BUYER_LABEL: str = "Unresolved buyer"
+UNRESOLVED_SKU_LABEL: str = "Unresolved SKU"
+UNRESOLVED_BUYER_ID: str = "UNVERIFIED"
+
 # How long the assembler waits for more speech when the text so far isn't a complete set of
 # trades ending in a rate terminator. Complete text commits at once, so this only applies to
 # fragments, overrides and undo. Longer than the old fixed 1.5 s because a mid-trade pause must

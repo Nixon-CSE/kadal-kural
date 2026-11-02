@@ -11,6 +11,9 @@ from kadal_kural.config import (
     SPAN_MATCH,
     SPAN_NORMALIZE,
     SPAN_UNDO,
+    UNRESOLVED_BUYER_ID,
+    UNRESOLVED_BUYER_LABEL,
+    UNRESOLVED_SKU_LABEL,
     AppSettings,
 )
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
@@ -145,10 +148,17 @@ class PreDispatchCreditFirewallService:
             or intent.rate_inr is None
             or intent.quantity is None
         ):
+            # A match below the gate is a guess: never record it as the party or item.
+            gate = self._settings.confidence_threshold
+            buyer_resolved = intent.buyer_id is not None and intent.buyer_confidence >= gate
+            sku_resolved = intent.sku_id is not None and intent.sku_confidence >= gate
+            buyer_id = intent.buyer_id if buyer_resolved and intent.buyer_id else UNRESOLVED_BUYER_ID
+            buyer_name = intent.buyer_name if buyer_resolved else UNRESOLVED_BUYER_LABEL
+            sku_name = intent.sku_name if sku_resolved else UNRESOLVED_SKU_LABEL
             event_id = self.repository.append_event_and_update_balance(
-                buyer_id=intent.buyer_id or "UNVERIFIED",
-                buyer_name=intent.buyer_name,
-                sku_name=intent.sku_name,
+                buyer_id=buyer_id,
+                buyer_name=buyer_name,
+                sku_name=sku_name,
                 quantity=intent.quantity or 0,
                 unit=intent.unit,
                 rate_inr=intent.rate_inr or 0,
@@ -162,14 +172,18 @@ class PreDispatchCreditFirewallService:
                 normalized_clause=intent.normalized_clause,
                 upi_payment_uri="",
                 commit_balance=False,
+                buyer_guess=intent.buyer_name,
+                buyer_guess_confidence=intent.buyer_confidence,
+                sku_guess=intent.sku_name,
+                sku_guess_confidence=intent.sku_confidence,
             )
             tts_msg = CLARIFICATION_PROMPT_TAMIL
             return CreditGateDecision(
                 event_id=event_id,
                 status=LedgerEventStatus.PENDING_CLARIFICATION,
-                buyer_id=intent.buyer_id or "UNVERIFIED",
-                buyer_name=intent.buyer_name,
-                sku_name=intent.sku_name,
+                buyer_id=buyer_id,
+                buyer_name=buyer_name,
+                sku_name=sku_name,
                 quantity=intent.quantity or 0,
                 unit=intent.unit,
                 rate_inr=intent.rate_inr or 0,

@@ -382,6 +382,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
     .CREDIT_HOLD_BREACH { color: #f87171; font-weight: 700; }
     .PENDING_CLARIFICATION { color: #facc15; font-weight: 700; }
     .VOIDED_BY_UNDO { color: #a78bfa; font-weight: 700; }
+    td.heard { max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #cbd5e1; }
     .alert-box { background: #172554; border-left: 4px solid #38bdf8; padding: 14px; margin-bottom: 18px; border-radius: 6px; font-size: 14px; display: none; }
     .stream-bar { background: #0f172a; border: 1px solid #334155; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; color: #94a3b8; }
   </style>
@@ -418,7 +419,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
       <h3 style="margin-top:0;">Append-Only Pre-Dispatch Audit Log</h3>
       <table>
         <thead>
-          <tr><th>Time</th><th>Buyer</th><th>SKU</th><th>Qty × Rate</th><th>Value</th><th>Status</th><th>Conf</th><th>UPI QR</th></tr>
+          <tr><th>Time</th><th>Heard</th><th>Buyer</th><th>SKU</th><th>Qty × Rate</th><th>Value</th><th>Status</th><th>Conf</th><th>UPI QR</th></tr>
         </thead>
         <tbody id="eventsTable"></tbody>
       </table>
@@ -558,6 +559,13 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
       btn.textContent = "⏹ Stop Live Microphone Stream";
     }
 
+    // The transcript is speech-to-text output; escape it before it lands in markup or an attribute.
+    function escapeHtml(text) {
+      return String(text ?? "").replace(/[&<>"']/g, ch => (
+        {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[ch]
+      ));
+    }
+
     function renderState(data) {
       document.getElementById("buyersList").innerHTML = data.buyers.map(b => {
         const pct = Math.min(100, Math.round((b.running_balance_inr / b.credit_limit_inr) * 100));
@@ -576,6 +584,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
       document.getElementById("eventsTable").innerHTML = data.events.map(e => `
         <tr>
           <td>${e.created_at}</td>
+          <td class="heard" title="${escapeHtml(e.raw_utterance)}">${escapeHtml(e.raw_utterance)}</td>
           <td>${e.buyer_name}</td>
           <td>${e.sku_name}</td>
           <td>${e.quantity} ${e.unit} × ₹${e.rate_inr}</td>
