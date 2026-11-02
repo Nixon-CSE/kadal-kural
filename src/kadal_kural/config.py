@@ -74,11 +74,19 @@ UNRESOLVED_BUYER_LABEL: str = "Unresolved buyer"
 UNRESOLVED_SKU_LABEL: str = "Unresolved SKU"
 UNRESOLVED_BUYER_ID: str = "UNVERIFIED"
 
-# How long the assembler waits for more speech when the text so far isn't a complete set of
-# trades ending in a rate terminator. Complete text commits at once, so this only applies to
-# fragments, overrides and undo. Longer than the old fixed 1.5 s because a mid-trade pause must
-# not cut a trade in half. Chosen by judgement: no live data on pause lengths exists yet.
+# How long the assembler waits for more speech before committing text that isn't a complete
+# set of trades ending in a rate terminator (complete text commits at once). Both windows are
+# JUDGEMENT VALUES, NOT MEASURED: no live data on traders' pause lengths exists yet. The
+# per-utterance timing line logs segment_gaps_ms so live trials can supply it.
+#
+# Any incomplete text (overrides, undo, fragments) waits this long. Longer than the old fixed
+# 1.5 s because a mid-trade pause must not cut a trade in half.
 ASSEMBLER_INCOMPLETE_WINDOW_SEC: float = 2.5
+# Text whose last trade has its buyer and quantity but no rate yet waits this long instead. The
+# wait runs between transcript arrivals, not over the silence: a 1.8 s pause before '500 ரேட்டு'
+# arrives about 1.8 s + that phrase's length + the STT latency difference later (~2.8 s), past
+# 2.5 s, which split ledger row 30 (19:14:59) from its rate.
+ASSEMBLER_AWAITING_RATE_WINDOW_SEC: float = 4.0
 
 # Span names PreDispatchCreditFirewallService records into PipelineTelemetry per utterance.
 # 'decide' covers every intent's gate and credit check, including the SQLite ledger write.

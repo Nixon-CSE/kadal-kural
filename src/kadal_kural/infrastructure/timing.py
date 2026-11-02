@@ -83,6 +83,7 @@ def utterance_timing_record(
     statuses: Sequence[str],
     reply_outcomes: Sequence[str],
     logged_at: str,
+    segment_received_ns: Sequence[int] = (),
 ) -> Dict[str, object]:
     """
     The structured timing record for one utterance. Every span is on one timeline whose zero
@@ -90,6 +91,9 @@ def utterance_timing_record(
     ``to_first_audio_ms`` is the end of the first reply's Timbre first byte on that timeline,
     or None when no reply audio was produced. ``reply_outcomes`` has one entry per reply
     attempted to completion, and ``logged_at`` is the wall-clock time, in the ledger's format.
+    ``segment_gaps_ms`` has one entry per pair of consecutive STT segments: the time between
+    their transcripts arriving (the pause plus the later segment's speech and any STT latency
+    difference; the raw input for choosing the assembler windows). Empty for one segment.
     """
     spans = {
         span.name: {"start_ms": _ms(span.start_offset_ns), "duration_ms": _ms(span.duration_ns)}
@@ -103,6 +107,9 @@ def utterance_timing_record(
         "origin": origin,
         "stt_segments": len(stt_reported_latency_ms),
         "stt_reported_latency_ms": [float(v) for v in stt_reported_latency_ms],
+        "segment_gaps_ms": [
+            _ms(later - earlier) for earlier, later in zip(segment_received_ns, segment_received_ns[1:])
+        ],
         "spans": spans,
         "to_first_audio_ms": (
             None if first_audio is None else _ms(first_audio.start_offset_ns + first_audio.duration_ns)

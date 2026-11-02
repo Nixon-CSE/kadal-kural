@@ -106,6 +106,7 @@ def test_timing_record_format_is_one_compact_json_line(caplog: pytest.LogCapture
         statuses=["BOOKED"],
         reply_outcomes=["audio"],
         logged_at="18:47:03",
+        segment_received_ns=[0, 2_800_000_000],
     )
     with caplog.at_level(logging.INFO, logger=TIMING_LOGGER_NAME):
         line = log_utterance_timing(record)
@@ -113,7 +114,7 @@ def test_timing_record_format_is_one_compact_json_line(caplog: pytest.LogCapture
     assert "\n" not in line and ": " not in line  # one compact line
     assert line == (
         '{"event":"utterance_timing","logged_at":"18:47:03","path":"live_ws","origin":"first_stt_segment_received",'
-        '"stt_segments":2,"stt_reported_latency_ms":[212.0,230.5],'
+        '"stt_segments":2,"stt_reported_latency_ms":[212.0,230.5],"segment_gaps_ms":[2800.0],'
         '"spans":{"assemble":{"start_ms":0.0,"duration_ms":1500.123},'
         '"decide":{"start_ms":1500.123,"duration_ms":0.25},'
         '"timbre_first_byte":{"start_ms":1500.5,"duration_ms":399.5}},'
@@ -147,6 +148,7 @@ async def test_voice_turn_logs_every_stage_on_one_timeline_from_the_first_segmen
         "origin": TIMING_ORIGIN_FIRST_SEGMENT,
         "stt_segments": 2,
         "stt_reported_latency_ms": [210.0, 230.0],
+        "segment_gaps_ms": [],  # this call passes no arrival times
         "spans": {
             SPAN_ASSEMBLE: {"start_ms": 0.0, "duration_ms": float(ASSEMBLE_MS)},
             SPAN_NORMALIZE: stage,
@@ -195,6 +197,7 @@ async def test_assembler_reports_when_its_segments_arrived() -> None:
         segment_latencies_ms=(200.0, 250.0),
         first_segment_ns=first_ns,
         last_segment_ns=first_ns + 695 * NS_PER_MS,
+        segment_received_ns=(first_ns, first_ns + 695 * NS_PER_MS),
     )
     assert utterance.mean_stt_latency_ms == 225.0
 

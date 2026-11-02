@@ -130,12 +130,13 @@ class PCM1024RingBufferPacer:
 
 @dataclass(frozen=True)
 class AssembledUtterance:
-    """The VAD segments stitched into one utterance, with when the first and last arrived."""
+    """The VAD segments stitched into one utterance, with when each one arrived."""
 
     text: str
     segment_latencies_ms: Tuple[float, ...]  # Prisma-reported, one per segment
     first_segment_ns: int  # time.perf_counter_ns() when the first segment was received
     last_segment_ns: int
+    segment_received_ns: Tuple[int, ...] = ()  # one per segment, in arrival order
 
     @property
     def mean_stt_latency_ms(self) -> float:
@@ -145,9 +146,10 @@ class AssembledUtterance:
 class MultiSegmentTradeAssembler:
     """
     Stitches consecutive VAD speech segments into one utterance. Text that ``is_complete`` says
-    is finished commits at once; anything else waits ``window_sec`` for more speech, restarting
-    on each segment. Each commit runs in its own task, one at a time and in order, so a new
-    segment can only cancel the wait, never a voice turn already under way.
+    is finished commits at once; text that ``awaits_rate`` says has a buyer and quantity but no
+    rate yet waits ``awaiting_rate_window_sec``; anything else waits ``window_sec``. Each wait
+    restarts on every segment. Each commit runs in its own task, one at a time and in order, so
+    a new segment can only cancel the wait, never a voice turn already under way.
     """
 
     def __init__(
@@ -157,8 +159,12 @@ class MultiSegmentTradeAssembler:
         clock: Callable[[], int] = time.perf_counter_ns,
         is_complete: Optional[Callable[[str], bool]] = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        awaits_rate: Optional[Callable[[str], bool]] = None,
+        awaiting_rate_window_sec: Optional[float] = None,
     ) -> None:
         self._window_sec = window_sec
+        self._awaits_rate = awaits_rate
+        self._awaiting_rate_window_sec = awaiting_rate_window_sec
         self._on_commit = on_commit
         self._clock = clock
         self._is_complete = is_complete
@@ -183,10 +189,11 @@ class MultiSegmentTradeAssembler:
         self._latencies_ms.append(stt_latency_ms)
         self._received_ns.append(self._clock() if received_ns is None else received_ns)
         self._cancel_window()
-        if self._is_complete is not None and self._is_complete(" ".join(self._segments)):
+        text = " ".join(self._segments)
+        if self._is_complete is not None and self._is_complete(text):
             self._start_commit()
         else:
-            self._window_task = asyncio.create_task(self._wait_then_commit())
+            self._window_task = asyncio.create_task(self._wait_then_commit(self._window_for(text)))
 
     async def flush_immediately(self) -> None:
         """Commits any buffered segments now and waits for every commit under way to finish."""
@@ -212,8 +219,18 @@ class MultiSegmentTradeAssembler:
             self._window_task.cancel()
         self._window_task = None
 
-    async def _wait_then_commit(self) -> None:
-        await self._sleep(self._window_sec)
+    def _window_for(self, text: str) -> float:
+        """How long incomplete ``text`` waits for more speech."""
+        if (
+            self._awaiting_rate_window_sec is not None
+            and self._awaits_rate is not None
+            and self._awaits_rate(text)
+        ):
+            return self._awaiting_rate_window_sec
+        return self._window_sec
+
+    async def _wait_then_commit(self, window_sec: float) -> None:
+        await self._sleep(window_sec)
         self._window_task = None
         self._start_commit()
 
@@ -225,6 +242,7 @@ class MultiSegmentTradeAssembler:
             segment_latencies_ms=tuple(self._latencies_ms),
             first_segment_ns=self._received_ns[0],
             last_segment_ns=self._received_ns[-1],
+            segment_received_ns=tuple(self._received_ns),
         )
         self._segments.clear()
         self._latencies_ms.clear()

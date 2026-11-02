@@ -12,7 +12,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, List, Optional
 
-from kadal_kural.config import ASSEMBLER_INCOMPLETE_WINDOW_SEC, TIMING_PATH_PIPECAT
+from kadal_kural.config import (
+    ASSEMBLER_AWAITING_RATE_WINDOW_SEC,
+    ASSEMBLER_INCOMPLETE_WINDOW_SEC,
+    TIMING_PATH_PIPECAT,
+)
 from kadal_kural.domain.models import CreditGateDecision
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.domain.telemetry import UtteranceEvaluation
@@ -88,6 +92,7 @@ class PipecatArthaPipelineRunner:
         speech_client: GnaniArthaSpeechClient,
         *,
         assembler_window_sec: float = ASSEMBLER_INCOMPLETE_WINDOW_SEC,
+        awaiting_rate_window_sec: float = ASSEMBLER_AWAITING_RATE_WINDOW_SEC,
         on_decision_emitted: Optional[Callable[[CreditDecisionFrame], Awaitable[None]]] = None,
         on_tts_emitted: Optional[Callable[[TTSAudioRawFrame], Awaitable[None]]] = None,
     ) -> None:
@@ -103,6 +108,8 @@ class PipecatArthaPipelineRunner:
             window_sec=assembler_window_sec,
             on_commit=self._handle_assembled_utterance,
             is_complete=firewall_service.matcher.is_complete_utterance,
+            awaits_rate=firewall_service.matcher.awaits_rate,
+            awaiting_rate_window_sec=awaiting_rate_window_sec,
         )
 
     async def push_frame(self, frame: Frame, *, synthesize_live_tts: bool = False) -> None:
@@ -164,6 +171,7 @@ class PipecatArthaPipelineRunner:
             path=TIMING_PATH_PIPECAT,
             stt_latencies_ms=utterance.segment_latencies_ms,
             first_segment_ns=utterance.first_segment_ns,
+            segment_received_ns=utterance.segment_received_ns,
             synthesize=getattr(self, "_synthesize_flag", False),
             on_evaluated=_emit_decisions,
             on_reply=_emit_reply,

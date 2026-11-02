@@ -26,6 +26,7 @@ import websockets
 from websockets.exceptions import ConnectionClosed
 
 from kadal_kural.config import (
+    ASSEMBLER_AWAITING_RATE_WINDOW_SEC,
     ASSEMBLER_INCOMPLETE_WINDOW_SEC,
     CLARIFICATION_PROMPT_TAMIL,
     LIVE_MIC_SAMPLE_RATE,
@@ -210,6 +211,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             path=TIMING_PATH_UPLOAD_WAV,
             stt_latencies_ms=latencies,
             first_segment_ns=received_ns[0],
+            segment_received_ns=received_ns,
         )
 
         return {
@@ -262,6 +264,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                 path=TIMING_PATH_LIVE_WS,
                 stt_latencies_ms=utterance.segment_latencies_ms,
                 first_segment_ns=utterance.first_segment_ns,
+                segment_received_ns=utterance.segment_received_ns,
             )
             await client_ws.send_json(
                 {
@@ -277,6 +280,8 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             window_sec=ASSEMBLER_INCOMPLETE_WINDOW_SEC,
             on_commit=_on_assembled_utterance,
             is_complete=matcher.is_complete_utterance,
+            awaits_rate=matcher.awaits_rate,
+            awaiting_rate_window_sec=ASSEMBLER_AWAITING_RATE_WINDOW_SEC,
         )
 
         try:

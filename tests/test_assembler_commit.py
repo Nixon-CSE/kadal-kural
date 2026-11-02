@@ -3,13 +3,30 @@
 from __future__ import annotations
 
 import asyncio
-from typing import List
+import json
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 import pytest
 
-from kadal_kural.config import ASSEMBLER_INCOMPLETE_WINDOW_SEC, NS_PER_MS, AppSettings
+from kadal_kural.config import (
+    ASSEMBLER_AWAITING_RATE_WINDOW_SEC,
+    ASSEMBLER_INCOMPLETE_WINDOW_SEC,
+    CLARIFICATION_PROMPT_TAMIL,
+    NS_PER_MS,
+    TIMING_PATH_LIVE_WS,
+    AppSettings,
+)
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
-from kadal_kural.infrastructure.gnani_client import AssembledUtterance, MultiSegmentTradeAssembler
+from kadal_kural.domain.models import LedgerEventStatus
+from kadal_kural.domain.service import PreDispatchCreditFirewallService
+from kadal_kural.infrastructure.gnani_client import (
+    AssembledUtterance,
+    MultiSegmentTradeAssembler,
+    SynthesisTelemetry,
+)
+from kadal_kural.infrastructure.persistence import AppendOnlyLedgerRepository
+from kadal_kural.infrastructure.voice_turn import VoiceTurn, run_voice_turn
 
 COMPLETE = "குமரனுக்கு 5 கிலோ டைகர் பிரான் 560 ரேட்டு"
 
@@ -53,6 +70,7 @@ def _assembler(matcher: BilingualCatalogMatcher, time_: FakeTime, committed: Lis
     return MultiSegmentTradeAssembler(
         ASSEMBLER_INCOMPLETE_WINDOW_SEC, _commit, clock=time_,
         is_complete=matcher.is_complete_utterance, sleep=time_.sleep,
+        awaits_rate=matcher.awaits_rate, awaiting_rate_window_sec=ASSEMBLER_AWAITING_RATE_WINDOW_SEC,
     )
 
 
@@ -68,17 +86,28 @@ async def test_complete_trade_commits_without_waiting(matcher: BilingualCatalogM
     assert time_() - committed[0].first_segment_ns == 0 and committed[0].first_segment_ns == received
 
 
-async def test_fragment_waits_the_longer_window_then_commits(matcher: BilingualCatalogMatcher) -> None:
+@pytest.mark.parametrize(
+    ("text", "window_sec"),
+    [
+        ("குமரனுக்கு 5 கிலோ டைகர் பிரான்", ASSEMBLER_AWAITING_RATE_WINDOW_SEC),  # buyer + qty, no rate
+        ("செந்திலுக்கு 25 கிலோ மட்டும் போடு", ASSEMBLER_INCOMPLETE_WINDOW_SEC),  # override
+        ("கடைசி ஆர்டர் கேன்சல்", ASSEMBLER_INCOMPLETE_WINDOW_SEC),  # undo
+        ("டைகர் பிரான்", ASSEMBLER_INCOMPLETE_WINDOW_SEC),  # no buyer, no quantity
+    ],
+)
+async def test_fragment_waits_its_window_then_commits(
+    matcher: BilingualCatalogMatcher, text: str, window_sec: float
+) -> None:
     time_ = FakeTime()
     committed: List[AssembledUtterance] = []
     assembler = _assembler(matcher, time_, committed)
-    await assembler.ingest_segment("குமரனுக்கு 5 கிலோ டைகர் பிரான்", 180.0)
+    await assembler.ingest_segment(text, 180.0)
     await asyncio.sleep(0)
-    assert time_.waits == [ASSEMBLER_INCOMPLETE_WINDOW_SEC]
-    await time_.advance_ms(int(ASSEMBLER_INCOMPLETE_WINDOW_SEC * 1000) - 1)
+    assert time_.waits == [window_sec]
+    await time_.advance_ms(int(window_sec * 1000) - 1)
     assert committed == []
     await time_.advance_ms(1)
-    assert [u.text for u in committed] == ["குமரனுக்கு 5 கிலோ டைகர் பிரான்"]
+    assert [u.text for u in committed] == [text]
 
 
 async def test_segment_that_completes_the_text_commits_at_once(matcher: BilingualCatalogMatcher) -> None:
@@ -111,3 +140,138 @@ async def test_segment_that_completes_the_text_commits_at_once(matcher: Bilingua
 )
 def test_what_counts_as_complete(text: str, complete: bool, matcher: BilingualCatalogMatcher) -> None:
     assert matcher.is_complete_utterance(text) is complete
+
+
+@pytest.mark.parametrize(
+    ("text", "awaits"),
+    [
+        ("குமரனுக்கு 20 கிலோ டைகர் பிரான்", True),
+        ("குமரனுக்கு 20 கிலோ", True),
+        ("செந்திலுக்கு 10 கிலோ வஞ்சரம் 800 ரேட்டு குமரனுக்கு 5 கிலோ", True),  # second trade's rate
+        (COMPLETE, False),
+        ("டைகர் பிரான் 20 கிலோ", False),  # no buyer
+        ("குமரனுக்கு டைகர் பிரான்", False),  # no quantity
+        ("செந்திலுக்கு 25 கிலோ மட்டும் போடு", False),  # override takes the held rate
+        ("கடைசி ஆர்டர் கேன்சல்", False),
+    ],
+)
+def test_what_awaits_a_rate(text: str, awaits: bool, matcher: BilingualCatalogMatcher) -> None:
+    assert matcher.awaits_rate(text) is awaits
+
+
+# --- End to end through the firewall and a spoken reply, on the fake clock -------------------
+
+PAUSED_FIRST_PART = "குமரனுக்கு 20 கிலோ டைகர் பிரான்"  # ledger row 30 (19:14:59) was this, cut off
+PAUSED_RATE = "500 ரேட்டு"
+KUMARAN, KUMARAN_OPENING_BALANCE, PAUSED_TRADE_VALUE = "BUY-102", 42_000, 10_000
+PAUSE_MS, RATE_PHRASE_MS = 1_800, 1_000  # the silence, then '500 ரேட்டு' itself, before it arrives
+TTFB_MS = 400
+
+
+class FakeSpeech:
+    """Replies after TTFB_MS of fake time, recording what was spoken."""
+
+    def __init__(self, time_: FakeTime) -> None:
+        self.time_ = time_
+        self.spoken: List[str] = []
+
+    async def synthesize_timbre_v25(
+        self, text_tamil: str, *, on_first_audio: Optional[Callable[[], None]] = None
+    ) -> SynthesisTelemetry:
+        self.spoken.append(text_tamil)
+        self.time_.now_ns += TTFB_MS * NS_PER_MS
+        if on_first_audio is not None:
+            on_first_audio()
+        return SynthesisTelemetry(b"RIFF", float(TTFB_MS), float(TTFB_MS), False)
+
+
+class LiveTurns:
+    """An assembler whose commits run full voice turns, as the /ws/live-audio gateway does."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        settings = AppSettings(db_path=str(tmp_path / "pause.db"))
+        matcher = BilingualCatalogMatcher(settings.catalog_path)
+        self.repo = AppendOnlyLedgerRepository(settings.db_path, list(matcher.buyers.values()))
+        self.firewall = PreDispatchCreditFirewallService(settings, matcher, self.repo)
+        self.time_ = FakeTime()
+        self.speech = FakeSpeech(self.time_)
+        self.turns: List[VoiceTurn] = []
+        self.assembler = MultiSegmentTradeAssembler(
+            ASSEMBLER_INCOMPLETE_WINDOW_SEC, self._commit, clock=self.time_,
+            is_complete=matcher.is_complete_utterance, sleep=self.time_.sleep,
+            awaits_rate=matcher.awaits_rate, awaiting_rate_window_sec=ASSEMBLER_AWAITING_RATE_WINDOW_SEC,
+        )
+
+    async def _commit(self, utterance: AssembledUtterance) -> None:
+        self.turns.append(
+            await run_voice_turn(
+                self.firewall, self.speech, utterance.text, path=TIMING_PATH_LIVE_WS,
+                stt_latencies_ms=utterance.segment_latencies_ms,
+                first_segment_ns=utterance.first_segment_ns,
+                segment_received_ns=utterance.segment_received_ns,
+                clock=self.time_,
+            )
+        )
+
+    async def settle(self) -> None:
+        for _ in range(5):
+            await asyncio.sleep(0)
+
+    def timing(self, turn: VoiceTurn) -> Dict[str, Any]:
+        record: Dict[str, Any] = json.loads(turn.log_line)
+        return record
+
+
+async def test_rate_after_a_1_8_s_pause_books_one_trade(tmp_path: Path) -> None:
+    live = LiveTurns(tmp_path)
+    await live.assembler.ingest_segment(PAUSED_FIRST_PART, 200.0)
+    await live.settle()
+    # The old single 2.5 s window would commit the fragment here; the rate is still on its way.
+    await live.time_.advance_ms(int(ASSEMBLER_INCOMPLETE_WINDOW_SEC * 1000))
+    assert live.turns == []
+    await live.time_.advance_ms(PAUSE_MS + RATE_PHRASE_MS - int(ASSEMBLER_INCOMPLETE_WINDOW_SEC * 1000))
+    await live.assembler.ingest_segment(PAUSED_RATE, 200.0)
+    await live.settle()
+
+    (turn,) = live.turns
+    (decision,) = turn.evaluation.decisions
+    assert decision.status == LedgerEventStatus.BOOKED
+    assert (decision.buyer_id, decision.trade_value_inr) == (KUMARAN, PAUSED_TRADE_VALUE)
+    assert live.repo.get_buyer_row(KUMARAN)["running_balance_inr"] == KUMARAN_OPENING_BALANCE + PAUSED_TRADE_VALUE
+    assert live.timing(turn)["segment_gaps_ms"] == [float(PAUSE_MS + RATE_PHRASE_MS)]
+    await live.time_.advance_ms(10_000)  # the cancelled wait never commits the fragment later
+    assert len(live.turns) == 1
+
+
+async def test_silence_past_the_long_window_gives_one_spoken_clarification(tmp_path: Path) -> None:
+    live = LiveTurns(tmp_path)
+    await live.assembler.ingest_segment(PAUSED_FIRST_PART, 200.0)
+    await live.settle()
+    await live.time_.advance_ms(int(ASSEMBLER_AWAITING_RATE_WINDOW_SEC * 1000) - 1)
+    assert live.turns == []
+    await live.time_.advance_ms(1)
+    await live.settle()
+
+    (turn,) = live.turns
+    (decision,) = turn.evaluation.decisions
+    assert decision.status == LedgerEventStatus.PENDING_CLARIFICATION
+    assert live.speech.spoken == [CLARIFICATION_PROMPT_TAMIL], "never silence"
+    (reply,) = turn.replies
+    assert reply is not None and reply.audio_wav_bytes
+    assert live.repo.get_buyer_row(KUMARAN)["running_balance_inr"] == KUMARAN_OPENING_BALANCE
+    await live.time_.advance_ms(10_000)
+    assert len(live.turns) == 1
+
+
+async def test_complete_trade_commits_at_once_with_no_added_wait(tmp_path: Path) -> None:
+    live = LiveTurns(tmp_path)
+    await live.assembler.ingest_segment(COMPLETE, 200.0)
+    await live.settle()
+
+    assert live.time_.waits == []
+    (turn,) = live.turns
+    assert turn.evaluation.decisions[0].status == LedgerEventStatus.BOOKED
+    timing = live.timing(turn)
+    assert timing["spans"]["assemble"]["duration_ms"] == 0.0
+    assert timing["to_first_audio_ms"] == float(TTFB_MS)  # only the reply's first byte, no window
+    assert timing["segment_gaps_ms"] == []

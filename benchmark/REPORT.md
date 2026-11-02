@@ -157,6 +157,7 @@ Timbre first byte (request → first audio byte) from the same trials: P50 375 /
 
 ## Known limitations
 
+- **The assembler windows are judgement values, not measured.** Incomplete text waits 2.5 s (`ASSEMBLER_INCOMPLETE_WINDOW_SEC`), or 4.0 s when its last trade has a buyer and quantity but no rate yet (`ASSEMBLER_AWAITING_RATE_WINDOW_SEC`). No live data on traders' pause lengths exists yet. The per-utterance timing line now logs `segment_gaps_ms` (time between consecutive transcripts arriving), so live trials can supply the data to choose both values.
 - **In-range quantity digit errors are not caught pre-booking.** A dropped or added quantity digit that stays inside the 1–1,000 kg band (50 → 5 kg, 5 → 50 kg) looks like a normal trade, so the gate books it. They are mitigated, after booking, by the spoken read-back (the reply states quantity, unit, product and amount) and voice undo (reverses the last booked trade), which rely on the trader noticing. A check against each buyer's order history is deferred. `tests/test_gate_fault_injection.py` keeps both cases as strict expected failures, so the suite flags any change in this behavior.
 
 ## Speech-start clipping: VAD threshold sweep

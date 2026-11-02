@@ -71,6 +71,7 @@ async def run_voice_turn(
     path: str,
     stt_latencies_ms: Sequence[float] = (),
     first_segment_ns: Optional[int] = None,
+    segment_received_ns: Sequence[int] = (),
     decision_stt_latency_ms: Optional[float] = None,
     synthesize: bool = True,
     on_evaluated: Optional[Callable[[UtteranceEvaluation], Awaitable[None]]] = None,
@@ -82,7 +83,8 @@ async def run_voice_turn(
     origin is ``first_segment_ns`` (perf_counter_ns when the first STT segment arrived) or,
     when there was no STT, the moment this is called. ``stt_latencies_ms`` are the
     Prisma-reported per-segment latencies; their mean is stamped on the decisions unless
-    ``decision_stt_latency_ms`` overrides it. One JSON timing line is logged even when a
+    ``decision_stt_latency_ms`` overrides it. ``segment_received_ns`` are when each segment
+    arrived; the gaps between them are logged as ``segment_gaps_ms``. One JSON timing line is logged even when a
     synthesis fails part-way. When synthesizing, every turn speaks: with no decision at all, the
     clarification prompt (``on_reply`` then gets None for the decision).
     """
@@ -151,6 +153,7 @@ async def run_voice_turn(
                 origin=TIMING_ORIGIN_REQUEST if first_segment_ns is None else TIMING_ORIGIN_FIRST_SEGMENT,
                 telemetry=telemetry,
                 stt_reported_latency_ms=stt_latencies_ms,
+                segment_received_ns=segment_received_ns,
                 statuses=[d.status.value for d in evaluation.decisions],
                 reply_outcomes=[_reply_outcome(r) for r in spoken],
                 logged_at=time.strftime(TIMING_WALL_CLOCK_FORMAT),

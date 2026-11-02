@@ -222,6 +222,23 @@ class BilingualCatalogMatcher:
             for i in intents
         )
 
+    def awaits_rate(self, text: str) -> bool:
+        """
+        True when the last trade in ``text`` has its buyer and quantity but no rate yet, so the
+        rate is likely still coming. A மட்டும் override is excluded: it takes the held trade's
+        rate and is not waiting for one.
+        """
+        intents = self.parse_normalized(self.normalize(text), text)
+        if not intents:
+            return False
+        last = intents[-1]
+        return (
+            last.buyer_id is not None
+            and last.quantity is not None
+            and last.rate_inr is None
+            and not last.is_barge_in_override
+        )
+
     def normalize(self, raw_utterance: str) -> str:
         """The normalize stage: resolves Prisma's hybrid Tamil-word/digit numerals."""
         return normalize_hybrid_tamil_numerals(raw_utterance)
