@@ -138,6 +138,8 @@ class AppSettings(BaseSettings):
     confidence_threshold: float = Field(default=0.82, ge=0.50, le=0.99)
     assumed_unit_confidence: float = Field(default=DEFAULT_ASSUMED_UNIT_CONFIDENCE, ge=0.0, le=1.0)
     db_path: str = Field(default="kadal_kural.db")
+    # Dev only: when set, each live mic session's raw audio is saved here (see infrastructure/mic_capture.py).
+    mic_capture_dir: str = Field(default="")
     catalog_path: str = Field(default=str(PACKAGE_ROOT / "data" / "catalog.json"))
 
     # Standard UPI Settlement Configuration

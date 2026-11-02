@@ -25,5 +25,8 @@ dist/
 *.egg-info/
 .DS_Store
 
+# Raw live-mic captures (recordings of real voices; KADAL_MIC_CAPTURE_DIR)
+mic_captures/
+
 # Benchmark transcript/audio cache (regenerable)
 benchmark/.cache/

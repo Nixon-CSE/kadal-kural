@@ -16,6 +16,7 @@ import logging
 import time
 import wave
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
@@ -45,6 +46,7 @@ from kadal_kural.infrastructure.gnani_client import (
     MultiSegmentTradeAssembler,
     PCM1024RingBufferPacer,
 )
+from kadal_kural.infrastructure.mic_capture import MicCaptureRecorder
 from kadal_kural.infrastructure.persistence import AppendOnlyLedgerRepository
 from kadal_kural.infrastructure.voice_turn import VoiceTurn, run_voice_turn
 
@@ -236,6 +238,11 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             return
 
         pacer = PCM1024RingBufferPacer()
+        capture = (
+            MicCaptureRecorder(Path(cfg.mic_capture_dir), LIVE_MIC_SAMPLE_RATE) if cfg.mic_capture_dir else None
+        )
+        if capture is not None:
+            logger.info("Capturing raw mic audio to %s", capture.wav_path)
         prisma_headers = {
             "x-api-key-id": cfg.gnani_api_key,
             "lang_code": "ta-IN",
@@ -296,6 +303,8 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                                 seg_text = str(evt.get("text", "")).strip()
                                 seg_lat = float(evt.get("latency", 0.0))
                                 if seg_text:
+                                    if capture is not None:
+                                        capture.mark_segment(seg_text, seg_lat)
                                     # Tell the browser to flush any playing TTS (Barge-In) before anything else
                                     speech_client.trigger_barge_in_abort()
                                     await client_ws.send_json(
@@ -317,6 +326,8 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                             logger.info("Live audio client disconnected (code %s)", msg.get("code"))
                             break
                         if "bytes" in msg and msg["bytes"]:
+                            if capture is not None:
+                                capture.write(msg["bytes"])
                             for frame_1024 in pacer.push_bytes(msg["bytes"]):
                                 await prisma_ws.send(frame_1024)
                         elif "text" in msg and msg["text"]:
@@ -335,6 +346,10 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                 await client_ws.send_json({"type": "error", "message": str(exc)})
             except Exception as send_exc:
                 logger.debug("Could not report the error to the client: %s", send_exc)
+        finally:
+            if capture is not None:
+                capture.close()
+                logger.info("Saved mic capture %s and %s", capture.wav_path, capture.sidecar_path)
 
     @app.post("/api/v1/reset")
     async def reset_ledger() -> Dict[str, Any]:
@@ -416,6 +431,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
     let processor = null;
     let micStream = null;
     let currentTtsAudio = null;
+    let ttsQueue = [];
 
     async function refresh() {
       const res = await fetch("/api/v1/state");
@@ -434,18 +450,37 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
     }
 
     function stopCurrentTtsPlayback() {
+      ttsQueue = [];
       if (currentTtsAudio) {
+        currentTtsAudio.onended = null;
+        currentTtsAudio.onerror = null;
         currentTtsAudio.pause();
         currentTtsAudio.currentTime = 0;
         currentTtsAudio = null;
       }
     }
 
-    function playBase64Wav(b64) {
-      if (!b64) return;
+    function playNextQueuedWav() {
+      const b64 = ttsQueue.shift();
+      if (!b64) {
+        currentTtsAudio = null;
+        return;
+      }
+      const audio = new Audio("data:audio/wav;base64," + b64);
+      currentTtsAudio = audio;
+      // Each decision carries its own Timbre reply; chain them so a two-trade turn speaks both.
+      audio.onended = () => { if (currentTtsAudio === audio) playNextQueuedWav(); };
+      audio.onerror = audio.onended;
+      audio.play().catch(err => {
+        console.warn("Audio play blocked:", err);
+        if (currentTtsAudio === audio) playNextQueuedWav();
+      });
+    }
+
+    function playDecisionReplies(decisions) {
       stopCurrentTtsPlayback();
-      currentTtsAudio = new Audio("data:audio/wav;base64," + b64);
-      currentTtsAudio.play().catch(err => console.warn("Audio play blocked:", err));
+      ttsQueue = decisions.map(d => d.audio_wav_b64).filter(Boolean);
+      playNextQueuedWav();
     }
 
     async function toggleLiveMic() {
@@ -488,8 +523,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             `<div><strong>[${r.status}] (STT: ${msg.stt_latency_ms}ms | Timbre TTFB: ${r.timbre_ttfb_ms || 0}ms):</strong> ${r.tts_response_tamil}</div>`
           ).join("<hr style='border-color:#1e3a8a'/>");
           renderState(msg.snapshot);
-          const lastWithAudio = msg.decisions.find(d => d.audio_wav_b64);
-          if (lastWithAudio) playBase64Wav(lastWithAudio.audio_wav_b64);
+          playDecisionReplies(msg.decisions);
         }
       };
 
@@ -567,8 +601,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         `<div><strong>[${r.status}] (Timbre TTFB: ${r.timbre_ttfb_ms || 0}ms):</strong> ${r.tts_response_tamil}</div>`
       ).join("<hr style='border-color:#1e3a8a'/>");
       renderState(out.snapshot);
-      const lastWithAudio = out.decisions.find(d => d.audio_wav_b64);
-      if (lastWithAudio) playBase64Wav(lastWithAudio.audio_wav_b64);
+      playDecisionReplies(out.decisions);
     }
 
     function runScreenshotTest() {
