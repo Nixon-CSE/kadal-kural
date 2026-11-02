@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple
 import pytest
 
 from benchmark.corpus import build_corpus
-from kadal_kural.config import AppSettings
+from kadal_kural.config import RATE_UNIT_MISMATCH_CONFIDENCE, AppSettings
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.models import LedgerEventStatus, TradeIntent
 from kadal_kural.domain.normalizer import split_multi_trade_clauses
@@ -108,6 +108,49 @@ def test_two_trades_read_the_same_in_any_word_order(transcript: str, matcher: Bi
         (SENTHIL, VANJARAM, 10, "kg", 800),
         (KUMARAN, PRAWN, 5, "kg", 560),
     ]
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        pytest.param("குமரனுக்கு 20 கிலோ டைகர் பிரான் கிலோ 740 ரேட்டு", id="unit-before-rate"),
+        pytest.param("குமரனுக்கு 20 கிலோ டைகர் பிரான் கிலோக்கு 740", id="dative-unit-before-rate"),
+        pytest.param("குமரனுக்கு 20 கிலோ டைகர் பிரான் ரேட்டு கிலோ 740", id="rate-word-unit-rate"),
+    ],
+)
+def test_per_unit_price_reads_as_the_rate(transcript: str, matcher: BilingualCatalogMatcher) -> None:
+    """'கிலோ 740' / 'கிலோக்கு 740' is a price per kg: 740 is the rate, not a quantity or a new trade."""
+    (intent,) = matcher.parse_utterance(transcript)
+    assert _trades([intent]) == [(KUMARAN, PRAWN, 20, "kg", 740)]
+    assert intent.overall_confidence == 1.0  # the per-unit word is not read as part of the SKU
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "குமரனுக்கு 20 கிலோ டைகர் பிரான் கிலோ 740 ரேட்டு",
+        "குமரனுக்கு 20 கிலோ டைகர் பிரான் ரேட்டு கிலோ 740",
+    ],
+)
+def test_per_unit_price_after_a_rate_word_is_a_complete_trade(
+    transcript: str, matcher: BilingualCatalogMatcher
+) -> None:
+    assert matcher.is_complete_utterance(transcript)  # commits at once, no assembler wait
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "குமரனுக்கு 20 கிலோ டைகர் பிரான் பாக்ஸ் 740 ரேட்டு",
+        "குமரனுக்கு 20 கிலோ டைகர் பிரான் ரேட்டு பாக்ஸ் 740",
+    ],
+)
+def test_price_per_a_different_unit_from_the_quantity_is_held(
+    transcript: str, matcher: BilingualCatalogMatcher
+) -> None:
+    (intent,) = matcher.parse_utterance(transcript)
+    assert (intent.quantity, intent.unit, intent.rate_inr) == (20, "kg", 740)
+    assert intent.overall_confidence <= RATE_UNIT_MISMATCH_CONFIDENCE  # 20 kg at 740 per box
 
 
 def test_number_after_the_rate_word_is_not_the_rate_when_the_clause_has_one() -> None:

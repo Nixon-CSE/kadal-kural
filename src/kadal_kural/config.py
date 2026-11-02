@@ -44,6 +44,11 @@ AMOUNT_CONFIDENCE_FLOOR: float = 0.0
 # trade to PENDING_CLARIFICATION instead of booking an unchecked per-box price.
 UNPRICED_UNIT_RATE_CONFIDENCE: float = 0.4
 
+# Rate confidence when the rate is quoted per a different unit from the quantity's ('20 கிலோ …
+# பாக்ஸ் 740': 20 kg at 740 per box): quantity × rate would mix units, so, like an unpriced
+# unit, it is set below the lowest allowed confidence_threshold and the trade is held.
+RATE_UNIT_MISMATCH_CONFIDENCE: float = 0.4
+
 # Clause confidence when a number is left over after quantity and rate (an exact repeat of the
 # rate is exempt). The extra number means the clause was misheard: a split hundreds word
 # ('500 60' for 'ஐநூற்று 60') or two trades merged into one clause. Which amount was meant is

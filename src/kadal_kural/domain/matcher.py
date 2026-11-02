@@ -15,6 +15,7 @@ from kadal_kural.config import (
     DEFAULT_ASSUMED_UNIT_CONFIDENCE,
     LEFTOVER_NUMBER_CONFIDENCE,
     NO_SKU_FALLBACK_UNIT,
+    RATE_UNIT_MISMATCH_CONFIDENCE,
     UNPRICED_UNIT_RATE_CONFIDENCE,
 )
 from kadal_kural.domain.models import (
@@ -30,6 +31,7 @@ from kadal_kural.domain.normalizer import (
     TRAILING_LEDGER_VERBS,
     ends_with_rate_terminator,
     normalize_hybrid_tamil_numerals,
+    per_unit_word,
     split_multi_trade_clauses,
     strip_numeral_decoration,
     strip_tamil_dative_suffix,
@@ -309,6 +311,13 @@ class BilingualCatalogMatcher:
                 buyer_conf = 0.92
 
             sku_end_idx = numeric_positions[1][0] if len(numeric_positions) >= 2 else len(tokens)
+            # A unit word right before the rate quotes it per that unit ('கிலோ 740', 'கிலோக்கு
+            # 740'); it is not part of the SKU name. The quantity's own unit word doesn't count.
+            rate_per_unit: Optional[str] = None
+            if len(numeric_positions) >= 2 and sku_end_idx - 1 > unit_end_idx:
+                rate_per_unit = per_unit_word(tokens[sku_end_idx - 1])
+                if rate_per_unit is not None:
+                    sku_end_idx -= 1
             sku_tokens = [
                 t
                 for t in tokens[buyer_end:qty_token_idx] + tokens[unit_end_idx + 1 : sku_end_idx]
@@ -343,6 +352,8 @@ class BilingualCatalogMatcher:
                 rate_conf = UNPRICED_UNIT_RATE_CONFIDENCE  # e.g. Vanjaram quoted per box
             else:
                 rate_conf = range_confidence(rate_inr, sku.rate_range_inr[unit])
+            if rate_per_unit is not None and rate_per_unit != unit:
+                rate_conf = min(rate_conf, RATE_UNIT_MISMATCH_CONFIDENCE)  # 20 kg at 740 per box
             overall_conf = min(buyer_conf, sku_conf, unit_conf, qty_conf, rate_conf)
             if any(value != rate_inr for _, value in numeric_positions[2:]):
                 overall_conf = min(overall_conf, LEFTOVER_NUMBER_CONFIDENCE)

@@ -337,14 +337,33 @@ def _is_number(token: str) -> bool:
     return strip_numeral_decoration(token) is not None
 
 
+def per_unit_word(token: str) -> Optional[str]:
+    """
+    The canonical unit a price is quoted per, for a unit word bare or in the dative
+    ('கிலோ 740', 'கிலோக்கு 740': 740 per kg -> 'kg'); None for any other word.
+    """
+    word = token.lower()
+    return CANONICAL_UNIT_MAP.get(word) or CANONICAL_UNIT_MAP.get(strip_tamil_dative_suffix(word))
+
+
 def ends_with_rate_terminator(normalized_text: str) -> bool:
-    """True for '... 740 ரேட்டு' and '... ரேட்டு 740': the last clause was closed by its rate word."""
+    """
+    True for '... 740 ரேட்டு', '... ரேட்டு 740' and '... ரேட்டு கிலோ 740': the last clause was
+    closed by its rate word.
+    """
     tokens = normalized_text.split()
     if not tokens:
         return False
     if _RATE_WORD_PATTERN.fullmatch(tokens[-1]):
         return True
-    return len(tokens) >= 2 and _is_number(tokens[-1]) and bool(_RATE_WORD_PATTERN.fullmatch(tokens[-2]))
+    if len(tokens) >= 2 and _is_number(tokens[-1]) and _RATE_WORD_PATTERN.fullmatch(tokens[-2]):
+        return True
+    return (
+        len(tokens) >= 3
+        and _is_number(tokens[-1])
+        and per_unit_word(tokens[-2]) is not None
+        and bool(_RATE_WORD_PATTERN.fullmatch(tokens[-3]))
+    )
 
 
 def split_multi_trade_clauses(
@@ -357,7 +376,8 @@ def split_multi_trade_clauses(
     - The rate word ('ரேட்டு', 'ரேட், 'rate') ends a clause, whichever side of it the rate is on:
       '... 740 ரேட்டு' and '... ரேட்டு 740' both give a clause holding quantity and rate. A number
       after the rate word is taken as the rate only while the clause still lacks one, and not
-      when a unit follows it ('ரேட்டு 30 கிலோ' starts the next trade's quantity).
+      when a unit follows it ('ரேட்டு 30 கிலோ' starts the next trade's quantity). A unit word
+      between them is a per-unit price and stays too ('ரேட்டு கிலோ 740' is 740 per kg).
     - A buyer name starts a new clause once the current one holds a number, even with no rate
       word before it (Prisma sometimes mishears the rate word). ``buyer_phrase_length(previous,
       token)`` says whether ``token`` ends a buyer phrase: 0 no, 1 by itself, 2 with the word
@@ -378,6 +398,9 @@ def split_multi_trade_clauses(
             if numbers == 1 and _is_number(following) and after_following not in CANONICAL_UNIT_MAP:
                 current.append(following)
                 idx += 1
+            elif numbers == 1 and per_unit_word(following) is not None and _is_number(after_following):
+                current.extend([following, tokens[idx + 2]])  # 'ரேட்டு கிலோ 740': 740 per kg
+                idx += 2
             clauses.append(current)
             current, numbers = [], 0
         else:
