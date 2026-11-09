@@ -30,6 +30,7 @@ amount.** It forwards the caller's words; all parsing, arithmetic and credit dec
 | Body | `transcript` (aliases: `user_text`, `text`), optional `conversation_id`, `caller_name` |
 | Response | `reply_text` (Tamil, always non-empty: each decision's reply, or the clarification prompt), `booked_count`, `held_count`, `statuses`, `conversation_id` |
 | Side effects | One ledger row per parsed trade, visible live on the dashboard (`/`) with what was heard |
+| Exposure | Behind a proxy or tunnel, this and `/healthz` are the only reachable routes (`KADAL_PUBLIC_EDGE_GUARD`, on by default) |
 
 ```bash
 curl -s localhost:8000/api/v1/phone-turn \
@@ -47,8 +48,10 @@ Tests: `tests/test_phone_turn.py`.
    make run
    ```
 2. **Public HTTPS URL** (`brew install cloudflared`, then `make tunnel`). Copy the
-   `https://….trycloudflare.com` URL. A quick tunnel exposes the whole app, including
-   `/api/v1/reset`; use it for demos only and stop it afterwards.
+   `https://….trycloudflare.com` URL. Through it, only `/api/v1/phone-turn` (token required) and
+   `/healthz` answer: the edge guard (`api/edge.py`) returns 403 for every other route and closes
+   the live-audio socket for any request a proxy forwarded, so the ledger, reset and Gnani credits
+   are not exposed. Verified through a live quick tunnel on 2026-11-09.
 3. **Whitelist your phone** in the Agent Builder console: *Phone Numbers → Whitelisted → Add
    Number*, then confirm the OTP (docs: `A04_Whitelisting`). No other paperwork is documented.
 4. **Create the agent** (*Manage Agents → Create*): language Tamil (add English for Tanglish),

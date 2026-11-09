@@ -112,6 +112,7 @@ All settings are `KADAL_*` environment variables, validated by `AppSettings` ([c
 | `KADAL_VAD_THRESHOLD` | 0.78 | Prisma VAD; sweep evidence in REPORT.md |
 | `KADAL_DB_PATH` | `kadal_kural.db` | SQLite ledger (WAL) |
 | `KADAL_PHONE_WEBHOOK_TOKEN` | empty (disabled) | Shared secret for `/api/v1/phone-turn` |
+| `KADAL_PUBLIC_EDGE_GUARD` | on | Through a proxy or tunnel, only the phone channel and `/healthz` are reachable |
 
 ## Quality
 

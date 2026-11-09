@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from websockets.exceptions import ConnectionClosed
 
+from kadal_kural.api.edge import PublicEdgeGuard
 from kadal_kural.config import (
     ASSEMBLER_AWAITING_RATE_WINDOW_SEC,
     ASSEMBLER_INCOMPLETE_WINDOW_SEC,
@@ -156,6 +157,8 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         version="1.0.0",
         lifespan=lifespan,
     )
+    if cfg.public_edge_guard:
+        app.add_middleware(PublicEdgeGuard)
 
     @app.get("/healthz")
     async def healthcheck() -> Dict[str, Any]:

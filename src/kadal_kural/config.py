@@ -170,6 +170,9 @@ class AppSettings(BaseSettings):
     # Phone channel: shared secret the Gnani Agent Builder On-Call action sends to /api/v1/phone-turn
     # (header X-Kadal-Token, or Authorization: Bearer <token>). Empty keeps the endpoint disabled.
     phone_webhook_token: str = Field(default="", repr=False)
+    # Requests arriving through a proxy/tunnel may reach only /api/v1/phone-turn and /healthz.
+    # Turn off only behind a proxy that does its own authentication (see api/edge.py).
+    public_edge_guard: bool = Field(default=True)
 
     # Standard UPI Settlement Configuration
     merchant_upi_vpa: str = Field(default="kadalkural.harbour@okaxis")
