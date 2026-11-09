@@ -99,7 +99,8 @@ Starting from opening balances (Senthil ₹1,28,000 of ₹1,50,000; Kumaran ₹4
 | `POST /api/v1/ingest` | Transcript in → firewall decisions (optional TTS) |
 | `POST /api/v1/phone-turn` | Phone channel: Gnani Agent Builder On-Call action, token-authenticated ([docs/phone_channel.md](docs/phone_channel.md)) |
 | `POST /api/v1/upload-wav` | WAV file → paced Prisma stream → decisions + replies |
-| `GET /api/v1/state` | Balances and audit log, including what was heard per row |
+| `GET /api/v1/state` | Balances and audit log, including what was heard and the channel (desk voice, typed, phone, file) per row |
+| `GET /api/v1/calls` | The phone line's call log: phone entries grouped into calls ([docs/phone_channel.md](docs/phone_channel.md#call-log)) |
 | `POST /api/v1/reset` | Reset to catalog opening balances (demo) |
 | `POST /api/v1/sandbox/evaluate` · `/sandbox/reset` | The game's sandbox: the same firewall on an isolated, throwaway ledger |
 | `GET /healthz` | Liveness and whether a Gnani key is configured |

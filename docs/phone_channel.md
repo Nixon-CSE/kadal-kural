@@ -27,10 +27,10 @@ amount.** It forwards the caller's words; all parsing, arithmetic and credit dec
 | | |
 |---|---|
 | Auth | `X-Kadal-Token: <KADAL_PHONE_WEBHOOK_TOKEN>` or `Authorization: Bearer <token>`. Compared in constant time. Unset token → `503` (endpoint disabled); wrong/missing → `401`, nothing written. |
-| Request | `transcript` (aliases `user_text`, `text`) as a JSON body, JSON string, form fields, plain text, query parameters or a header; optional `conversation_id`. A missing or unfilled `{{placeholder}}` transcript returns 200 with the clarification prompt and writes nothing |
+| Request | `transcript` (aliases `user_text`, `text`) as a JSON body, JSON string, form fields, plain text, query parameters or a header. Optional call id as `conversation_id` (aliases `call_id`, `session_id`, `call_sid`): letters, digits and `._:-`, up to 128 characters; anything else, or an unfilled `{{placeholder}}`, is ignored. A missing or unfilled `{{placeholder}}` transcript returns 200 with the clarification prompt and writes nothing |
 | Response | `reply_text` (Tamil, always non-empty: each decision's reply, or the clarification prompt), `booked_count`, `held_count`, `statuses`, `conversation_id`, `transcript_received` |
 | Logging | One `PHONE` line per request: content type, body size, field names, header names (never the token), and the decision |
-| Side effects | One ledger row per parsed trade, visible live on the dashboard (`/`) with what was heard |
+| Side effects | One ledger row per parsed trade, stored with `channel = "phone"` and the call id, and shown live on the desk, ledger, buyers and phone pages (they poll every 4 s while the phone line is on) with what was heard |
 | Exposure | Behind a proxy or tunnel, this and `/healthz` are the only reachable routes (`KADAL_PUBLIC_EDGE_GUARD`, on by default) |
 
 ```bash
@@ -39,7 +39,25 @@ curl -s localhost:8000/api/v1/phone-turn \
   -d '{"transcript": "குமரனுக்கு 20 கிலோ டைகர் பிரான் 500 ரேட்டு"}'
 ```
 
-Tests: `tests/test_phone_turn.py`.
+Tests: `tests/test_phone_turn.py`, `tests/test_channels.py`.
+
+## Call log
+
+Every ledger entry records how its order arrived: `voice` (desk microphone), `typed`, `phone` or
+`file` (uploaded WAV). Entries written before channels were recorded have `channel = null`.
+
+`GET /api/v1/calls?limit=20` (1–100) groups the phone entries into calls, newest first. Entries
+with a call id are grouped by it; entries without one form a call while turns keep arriving less
+than five minutes apart. Each call lists its turns (what was heard, the decision, the value,
+whether it was later undone), its outcome counts and its booked value, excluding undone bookings.
+Like every route except this one and `/healthz`, it is not reachable through the tunnel.
+
+The **Phone line** page shows this log live, the ledger has a channel filter and a phone badge on
+every phone entry, and each buyer card counts the orders that buyer placed by phone.
+
+To group turns by the real call, add a second body field to the `book_trade` action,
+`conversation_id`, set to the agent's call or conversation id variable if the console offers one.
+Without it, turns are grouped by time, which is right for one caller at a time.
 
 ## Setup (about 30 minutes)
 
