@@ -1,4 +1,4 @@
-import { Calculator, Phone } from "lucide-react";
+import { Calculator } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 
@@ -72,9 +72,6 @@ function BuyerCard({ buyer, events, index }: { buyer: Buyer; events: LedgerEvent
               <h2 className="truncate text-2xl font-extrabold">{buyer.canonical_name}</h2>
               <p lang="ta" className="tamil text-muted-foreground">{buyer.tamil_speak_name}</p>
             </div>
-            <a href={`tel:${buyer.phone_e164}`} className="surface inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-semibold hover:border-lime">
-              <Phone className="size-4" /> Call
-            </a>
           </div>
 
           <div className="flex flex-wrap items-center gap-6">

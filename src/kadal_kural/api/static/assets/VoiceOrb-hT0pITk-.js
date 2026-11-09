@@ -1,4 +1,4 @@
-import{r,j as s}from"./index-CaWxNgJl.js";import{g as F,h as I,a as _,M as R,i as k,u as S,_ as w,b as O,V,j as T,k as L,S as G,E as D,L as P,C as N}from"./SceneCanvas-DHy8Ren8.js";import{F as $,M as B}from"./Float-n58kva1t.js";const H=()=>parseInt(F.replace(/\D+/g,"")),J=H();class U extends L{constructor(){super({uniforms:{time:{value:0},pixelRatio:{value:1}},vertexShader:`
+import{r,j as s}from"./index-DlbLW2Ka.js";import{g as F,h as I,a as _,M as R,i as k,u as S,_ as w,b as O,V,j as T,k as L,S as G,E as D,L as P,C as N}from"./SceneCanvas-DBaKU3Jm.js";import{F as $,M as B}from"./Float-Ce8Favkt.js";const H=()=>parseInt(F.replace(/\D+/g,"")),J=H();class U extends L{constructor(){super({uniforms:{time:{value:0},pixelRatio:{value:1}},vertexShader:`
         uniform float pixelRatio;
         uniform float time;
         attribute float size;  
