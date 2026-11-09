@@ -72,6 +72,7 @@ from kadal_kural.infrastructure.voice_turn import VoiceTurn, run_voice_turn
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+DESK_PAGES = ("/desk", "/ledger", "/buyers", "/insights", "/phone")
 
 
 def _enable_timing_log() -> None:
@@ -537,6 +538,10 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
         return index_html
+
+    # Client-side routes of the desk app: each serves the same page so deep links and reloads work.
+    for page_path in DESK_PAGES:
+        app.add_api_route(page_path, index, methods=["GET"], response_class=HTMLResponse, include_in_schema=False)
 
     return app
 

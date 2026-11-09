@@ -5,7 +5,9 @@
 **A screen-free Tamil/Tanglish voice credit ledger that checks every order before dispatch, built for loud wholesale fish markets.**
 A trader speaks an order ("குமரனுக்கு 20 கிலோ டைகர் பிரான் 500 ரேட்டு"). Kadal Kural books it, holds it for a credit-limit breach, or asks the trader to repeat it, and answers in spoken Tamil within about half a second. Built on the **Gnani AI Artha Stack**: Prisma v2.5 8 kHz streaming STT and Timbre v2.5 streaming TTS.
 
-![The Kadal Kural desk: the heard Tamil order, a credit-hold decision with its spoken reply, buyer credit headroom and the append-only ledger](docs/images/desk.png)
+![Kadal Kural home page: 3D hero with the voice orb and ledger slips](docs/images/home.png)
+
+![The live desk: the heard Tamil order, the decision with its spoken reply, credit dials, the pipeline and the ledger](docs/images/desk.png)
 
 | Measured result (see [benchmark/REPORT.md](benchmark/REPORT.md)) | |
 |---|---|
@@ -64,7 +66,7 @@ cp .env.example .env            # set KADAL_GNANI_API_KEY
 make run                        # http://localhost:8000
 ```
 
-Open http://localhost:8000, allow the microphone (headphones recommended), press the microphone or the space bar and speak an order. You can also type one, or pick one under *Try an order*. Or use the API without a microphone:
+Open http://localhost:8000. The app has six pages: **Home** (3D overview), **Desk** (live console: open it, allow the microphone, press the space bar and speak an order; or type one, or pick one under *Try an order*), **Ledger** (search, filters, CSV export, per-entry drawer with a UPI QR), **Buyers** (credit dials and a what-if check), **Insights** (3D decision chart, confidence histogram, noise benchmark) and **Phone line** (the Gnani Agent Builder channel). ⌘K / Ctrl+K opens the command palette anywhere. Or use the API without a microphone:
 
 ```bash
 curl -s localhost:8000/api/v1/ingest -H 'Content-Type: application/json' \

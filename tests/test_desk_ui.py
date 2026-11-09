@@ -10,7 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from kadal_kural.api.main import STATIC_DIR, create_app
+from kadal_kural.api.main import DESK_PAGES, STATIC_DIR, create_app
 from kadal_kural.config import LIVE_MIC_SAMPLE_RATE, AppSettings
 
 WEB_SRC = Path(__file__).resolve().parents[1] / "web" / "src"
@@ -65,3 +65,18 @@ def test_state_reports_whether_the_phone_line_is_on(tmp_path: Path) -> None:
     with off, on:
         assert off.get("/api/v1/state").json()["phone_channel_enabled"] is False
         assert on.get("/api/v1/state").json()["phone_channel_enabled"] is True
+
+
+@pytest.mark.parametrize("path", DESK_PAGES)
+def test_every_desk_page_url_serves_the_app(client: TestClient, path: str) -> None:
+    page = client.get(path)
+    assert page.status_code == 200 and '<div id="root">' in page.text
+
+
+def test_unknown_paths_are_still_404(client: TestClient) -> None:
+    assert client.get("/no-such-page").status_code == 404
+    assert client.get("/api/v1/nope").status_code == 404
+
+
+def test_desk_pages_are_not_reachable_through_the_public_tunnel(client: TestClient) -> None:
+    assert client.get("/ledger", headers={"Cf-Connecting-Ip": "203.0.113.7"}).status_code == 403

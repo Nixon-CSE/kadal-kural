@@ -1,9 +1,10 @@
-import { Keyboard, List, Mic, RotateCcw, Sparkles, Square } from "lucide-react";
+import { ArrowRight, Keyboard, Mic, RotateCcw, Sparkles, Square } from "lucide-react";
 
 import {
   CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut,
 } from "@/components/ui/command";
 import { TRY_ORDERS } from "@/lib/format";
+import { NAV } from "@/lib/nav";
 
 interface Props {
   open: boolean;
@@ -13,9 +14,10 @@ interface Props {
   onType: () => void;
   onReset: () => void;
   onTry: (text: string) => void;
+  onNavigate: (to: string) => void;
 }
 
-export function CommandMenu({ open, onOpenChange, listening, onToggleMic, onType, onReset, onTry }: Props) {
+export function CommandMenu({ open, onOpenChange, listening, onToggleMic, onType, onReset, onTry, onNavigate }: Props) {
   const run = (fn: () => void) => () => { onOpenChange(false); fn(); };
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title="Commands" description="Run a desk action or a sample order">
@@ -29,12 +31,17 @@ export function CommandMenu({ open, onOpenChange, listening, onToggleMic, onType
           <CommandItem onSelect={run(onType)}>
             <Keyboard /> Type an order <CommandShortcut>/</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={run(() => document.getElementById("ledger")?.scrollIntoView({ behavior: "smooth" }))}>
-            <List /> Go to the ledger
-          </CommandItem>
           <CommandItem onSelect={run(onReset)}>
             <RotateCcw /> Reset balances
           </CommandItem>
+        </CommandGroup>
+        <CommandSeparator />
+        <CommandGroup heading="Go to">
+          {NAV.map((n) => (
+            <CommandItem key={n.to} value={`go to ${n.label}`} onSelect={run(() => onNavigate(n.to))}>
+              <ArrowRight /> {n.label}
+            </CommandItem>
+          ))}
         </CommandGroup>
         <CommandSeparator />
         <CommandGroup heading="Sample orders">

@@ -9,12 +9,12 @@ const R = 42;
 const C = 2 * Math.PI * R;
 const ARC = 0.75; // a 270° dial
 
-function Dial({ used, level, flash }: { used: number; level: "ok" | "tight" | "critical"; flash: boolean }) {
+export function Dial({ used, level, flash, className = "size-28" }: { used: number; level: "ok" | "tight" | "critical"; flash: boolean; className?: string }) {
   const reduced = useReducedMotion();
   const stroke = level === "critical" ? "url(#g-hold)" : level === "tight" ? "url(#g-ask)" : "url(#g-lime)";
   const shown = Math.min(1, used);
   return (
-    <svg viewBox="0 0 100 100" className="size-28 shrink-0 -rotate-[225deg] drop-shadow-[0_6px_10px_rgba(15,29,20,0.18)]" aria-hidden>
+    <svg viewBox="0 0 100 100" className={cn(className, "shrink-0 -rotate-[225deg] drop-shadow-[0_6px_10px_rgba(15,29,20,0.18)]")} aria-hidden>
       <defs>
         <linearGradient id="g-lime" x1="0" x2="1"><stop offset="0" stopColor="#d9f99d" /><stop offset="1" stopColor="#65a30d" /></linearGradient>
         <linearGradient id="g-ask" x1="0" x2="1"><stop offset="0" stopColor="#fde68a" /><stop offset="1" stopColor="#d97706" /></linearGradient>
