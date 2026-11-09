@@ -5,6 +5,8 @@
 **A screen-free Tamil/Tanglish voice credit ledger that checks every order before dispatch, built for loud wholesale fish markets.**
 A trader speaks an order ("குமரனுக்கு 20 கிலோ டைகர் பிரான் 500 ரேட்டு"). Kadal Kural books it, holds it for a credit-limit breach, or asks the trader to repeat it, and answers in spoken Tamil within about half a second. Built on the **Gnani AI Artha Stack**: Prisma v2.5 8 kHz streaming STT and Timbre v2.5 streaming TTS.
 
+![The Kadal Kural desk: the heard Tamil order, a credit-hold decision with its spoken reply, buyer credit headroom and the append-only ledger](docs/images/desk.png)
+
 | Measured result (see [benchmark/REPORT.md](benchmark/REPORT.md)) | |
 |---|---|
 | Silent financial errors (wrong trades booked without a hold) | **0 of 560** noisy trades, 4 noise profiles at 10 and 5 dB SNR |
@@ -62,7 +64,7 @@ cp .env.example .env            # set KADAL_GNANI_API_KEY
 make run                        # http://localhost:8000
 ```
 
-Open http://localhost:8000, allow the microphone (headphones recommended), press **Start** and speak an order. Or use the API without a microphone:
+Open http://localhost:8000, allow the microphone (headphones recommended), press the microphone or the space bar and speak an order. You can also type one, or pick one under *Try an order*. Or use the API without a microphone:
 
 ```bash
 curl -s localhost:8000/api/v1/ingest -H 'Content-Type: application/json' \
@@ -128,7 +130,8 @@ make bench     # re-score 405 cached Prisma transcripts, no API calls
 src/kadal_kural/
   domain/            pure logic, no I/O: normalizer, matcher, firewall service, models, telemetry
   infrastructure/    Gnani Prisma/Timbre clients, pacer, assembler, Pipecat pipeline, SQLite ledger
-  api/main.py        FastAPI gateway, WebSocket bridge, dashboard
+  api/main.py        FastAPI gateway, WebSocket bridge
+  api/static/        desk UI (HTML, CSS, JS; no build step)
   data/catalog.json  buyers, credit limits, SKUs, unit and rate bands
 benchmark/           noise benchmark, scoring, REPORT.md, raw results
 scripts/             live measurement and diagnosis scripts (latency, barge-in, VAD, ITN)
