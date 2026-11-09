@@ -1,4 +1,4 @@
-.PHONY: install run test lint typecheck check bench docker tunnel web web-dev
+.PHONY: install run test lint typecheck check audit bench docker tunnel web web-dev
 
 install:      ## venv deps incl. dev tools
 	pip install -e ".[dev]"
@@ -17,11 +17,15 @@ typecheck:
 
 check: lint typecheck test   ## what CI runs
 
+audit:        ## known vulnerabilities in Python and production npm dependencies
+	pip-audit --skip-editable
+	cd web && npm audit --omit=dev
+
 bench:        ## re-score cached Prisma transcripts, no API calls
 	python benchmark/run_eval.py --analyze-only
 
 docker:
-	docker build -t kadal-kural . && docker run --rm -p 8000:8000 --env-file .env kadal-kural
+	docker build -t kadal-kural . && docker run --rm -p 127.0.0.1:8000:8000 --env-file .env kadal-kural
 
 tunnel:       ## public HTTPS URL for the Gnani Agent Builder phone action
 	cloudflared tunnel --url http://localhost:8000

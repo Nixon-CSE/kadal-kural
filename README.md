@@ -57,7 +57,7 @@ flowchart LR
 
 ## Quick start
 
-Requires Python 3.9+ and a Gnani API key for live speech. The tests and benchmark re-scoring need no key or network.
+Requires Python 3.11+ and a Gnani API key for live speech. The tests and benchmark re-scoring need no key or network.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -76,7 +76,7 @@ curl -s -X POST localhost:8000/api/v1/reset     # back to opening balances
 
 **Desk UI development** (Node 20): `make web-dev` serves the React desk on http://localhost:5173 with hot reload, proxying the API on :8000; `make web` rebuilds it into `src/kadal_kural/api/static/`. The built desk is committed, so running the server needs only Python.
 
-Docker: `docker build -t kadal-kural . && docker run -p 8000:8000 --env-file .env kadal-kural` (non-root, healthcheck, ledger on the `/data` volume).
+Docker: `make docker`, i.e. `docker build -t kadal-kural . && docker run -p 127.0.0.1:8000:8000 --env-file .env kadal-kural` (non-root, healthcheck, ledger on the `/data` volume, published on localhost only).
 
 ### Try these
 
@@ -119,18 +119,31 @@ All settings are `KADAL_*` environment variables, validated by `AppSettings` ([c
 | `KADAL_DB_PATH` | `kadal_kural.db` | SQLite ledger (WAL) |
 | `KADAL_PHONE_WEBHOOK_TOKEN` | empty (disabled) | Shared secret for `/api/v1/phone-turn` |
 | `KADAL_PUBLIC_EDGE_GUARD` | on | Through a proxy or tunnel, only the phone channel and `/healthz` are reachable |
+| `KADAL_ALLOWED_HOSTS` | localhost only | Other host names that may serve the desk directly (e.g. a LAN address) |
+| `KADAL_PHONE_RATE_LIMIT_PER_MINUTE` | 60 | Phone channel requests per caller address per minute (0 disables) |
+| `KADAL_MAX_PHONE_BODY_BYTES` / `KADAL_MAX_UPLOAD_BYTES` | 32 KB / 10 MB | Request body limits |
+| `KADAL_LIVE_SESSION_MAX_SECONDS` | 1200 | A live microphone session closes after this long |
 
 ## Quality
 
 ```bash
-make check     # ruff + mypy --strict + pytest; the same steps CI runs on Python 3.9 and 3.12
+make check     # ruff + mypy --strict + pytest; the same steps CI runs on Python 3.11, 3.12 and 3.13
+make audit     # known vulnerabilities in Python and production npm dependencies
 make bench     # re-score 405 cached Prisma transcripts, no API calls
 ```
 
-- **238 tests:** normalizer, matcher and clause boundaries, credit firewall and undo invariants, STT fault injection, assembler timing with a fake clock, barge-in, WebSocket lifecycle, audit log and the phone channel. Two cases are kept as strict expected failures for a documented limitation (in-range quantity digit errors).
+- **339 tests:** normalizer, matcher and clause boundaries, credit firewall and undo invariants, STT fault injection, assembler timing with a fake clock, barge-in, WebSocket lifecycle, audit log, the phone channel and call log, and the security controls (cross-site requests, DNS rebinding, size and rate limits, headers). Two cases are kept as strict expected failures for a documented limitation (in-range quantity digit errors).
 - **Benchmark:** 45 utterances × 9 conditions (clean plus harbour, market, traffic and ice-crusher noise at 10 and 5 dB), with WER, per-field accuracy, silent financial error rate, threshold sensitivity, before/after comparisons and per-stage latency.
 - **Frontend performance**, measured with Chrome on a real GPU ([web/perf/](web/perf/), macOS Chrome via the DevTools protocol): click-to-content navigation median **612 → 146 ms**; scrolling holds 60 fps (p95 frame 17.5 ms); 3D canvases render only while visible, capped at 30–45 fps, with shadows and lighting baked once. With WebGL off, an idle page does 27 ms of work per 5 s.
-- **CI:** GitHub Actions runs lint, type check and tests (Python 3.9 and 3.12), a type-checked production build of the desk, and a Docker build with a health smoke test.
+- **CI:** GitHub Actions runs lint, strict type check and tests on Python 3.11, 3.12 and 3.13; `pip-audit` and `npm audit` on what ships; a type-checked production build of the desk; and a Docker build whose smoke test checks health, the security headers, a refused cross-site write and the non-root user. CodeQL scans Python and TypeScript on every push; Dependabot updates dependencies weekly.
+
+## Security
+
+The desk is local and the phone channel is the only public route. Behind a tunnel every other route
+is refused; locally, requests from other websites (CSRF, cross-site WebSocket) and unknown host names
+(DNS rebinding) are refused, every response carries a strict CSP and hardening headers, and bodies,
+transcripts, audio frames, sessions and phone requests are limited. The threat model, each control,
+where it lives and the tests that prove it are in [SECURITY.md](SECURITY.md).
 
 ## Project layout
 
@@ -139,6 +152,8 @@ src/kadal_kural/
   domain/            pure logic, no I/O: normalizer, matcher, firewall service, models, telemetry
   infrastructure/    Gnani Prisma/Timbre clients, pacer, assembler, Pipecat pipeline, SQLite ledger
   api/main.py        FastAPI gateway, WebSocket bridge
+  api/edge.py        tunnel guard: only the phone channel and health check are public
+  api/security.py    headers, cross-site and Host checks, size and rate limits
   api/static/        built desk UI (generated by `make web`; served by FastAPI, no Node at runtime)
 web/                 desk UI source: React + TypeScript + Vite, Tailwind v4, shadcn/ui, React Bits,
                      react-three-fiber (3D voice orb), Motion
