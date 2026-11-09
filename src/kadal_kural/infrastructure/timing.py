@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from itertools import pairwise
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from kadal_kural.config import (
@@ -108,7 +109,7 @@ def utterance_timing_record(
         "stt_segments": len(stt_reported_latency_ms),
         "stt_reported_latency_ms": [float(v) for v in stt_reported_latency_ms],
         "segment_gaps_ms": [
-            _ms(later - earlier) for earlier, later in zip(segment_received_ns, segment_received_ns[1:])
+            _ms(later - earlier) for earlier, later in pairwise(segment_received_ns)
         ],
         "spans": spans,
         "to_first_audio_ms": (

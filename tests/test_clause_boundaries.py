@@ -53,7 +53,7 @@ def test_merged_transcripts_produce_their_two_true_trades(utterance_id: str, mat
     truth = next(u for u in build_corpus() if u.utterance_id == utterance_id).ground_truth_trades
     intents = matcher.parse_utterance(MERGED_TRANSCRIPTS[utterance_id])
     assert len(intents) == len(truth) == 2
-    for intent, expected in zip(intents, truth):
+    for intent, expected in zip(intents, truth, strict=True):
         assert intent.buyer_id == expected.buyer_id
         assert intent.sku_id is not None and matcher.skus[intent.sku_id].canonical_name == expected.sku_canonical_name
         assert (intent.quantity, intent.unit, intent.rate_inr) == (expected.quantity, expected.unit, expected.rate_inr)

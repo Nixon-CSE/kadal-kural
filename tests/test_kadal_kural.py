@@ -330,7 +330,7 @@ async def test_live_gnani_timbre_to_prisma_roundtrip(tmp_path: Path) -> None:
     3. Streams exact 1,024-byte frames at 64ms intervals to wss://api.vachana.ai/stt/v3/stream (Prisma v2.5).
     4. Runs the returned live Prisma transcript through the Credit Firewall into SQLite WAL.
     """
-    import audioop  # removed in Python 3.13; imported here so collection works on newer interpreters
+    import numpy as np
 
     settings = AppSettings(db_path=str(tmp_path / "live_e2e.db"))
     if not settings.gnani_api_key or settings.gnani_api_key == "your_gnani_api_key_here":
@@ -353,7 +353,10 @@ async def test_live_gnani_timbre_to_prisma_roundtrip(tmp_path: Path) -> None:
         assert len(pcm_16k) == len(tts_telemetry.audio_wav_bytes) - 44, "WAV header sizes must be exact"
         src_rate = wf.getframerate()
 
-    pcm_8k, _ = audioop.ratecv(pcm_16k, 2, 1, src_rate, 8000, None)
+    # Linear-interpolation resample to 8 kHz (audioop, used before, is gone in Python 3.13).
+    samples = np.frombuffer(pcm_16k, dtype="<i2").astype(np.float64)
+    target = np.linspace(0, len(samples) - 1, int(len(samples) * 8000 / src_rate))
+    pcm_8k = np.interp(target, np.arange(len(samples)), samples).astype("<i2").tobytes()
 
     # 3. Stream 8kHz PCM in 1,024-byte frames to live Gnani Prisma v2.5 WebSocket
     live_segments: list[str] = []

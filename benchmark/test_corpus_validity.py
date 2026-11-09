@@ -57,7 +57,7 @@ def test_corpus_ground_truth_matches_clean_text_parse() -> None:
                 f"expected {len(utterance.ground_truth_trades)} — {utterance.spoken_text!r}"
             )
             continue
-        for i, (intent, truth) in enumerate(zip(intents, utterance.ground_truth_trades)):
+        for i, (intent, truth) in enumerate(zip(intents, utterance.ground_truth_trades, strict=True)):
             sku_name = matcher.skus[intent.sku_id].canonical_name if intent.sku_id else None
             mismatches = []
             if intent.buyer_id != truth.buyer_id:
