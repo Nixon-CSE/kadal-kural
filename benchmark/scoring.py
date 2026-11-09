@@ -26,10 +26,11 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 import jiwer
 
+from benchmark.corpus import BenchmarkUtterance, GroundTruthTrade
 from kadal_kural.config import SPAN_DECIDE, SPAN_MATCH, SPAN_NORMALIZE, AppSettings
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.models import CreditGateDecision, LedgerEventStatus, TradeIntent
@@ -37,8 +38,6 @@ from kadal_kural.domain.normalizer import normalize_hybrid_tamil_numerals
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.infrastructure.persistence import AppendOnlyLedgerRepository
 from kadal_kural.infrastructure.timing import PerfCounterSpanRecorder
-
-from benchmark.corpus import BenchmarkUtterance, GroundTruthTrade
 
 ENTITY_FIELDS: Tuple[str, ...] = ("buyer", "sku", "quantity", "unit", "rate")
 BOOKED_STATUSES = frozenset({LedgerEventStatus.BOOKED, LedgerEventStatus.BOOKED_AFTER_BARGE_IN})

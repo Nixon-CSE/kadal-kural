@@ -9,7 +9,14 @@ from typing import Any, Callable, Tuple, TypeVar
 
 import pytest
 
-from kadal_kural.config import NS_PER_MS, SPAN_DECIDE, SPAN_MATCH, SPAN_NORMALIZE, SPAN_UNDO, AppSettings
+from kadal_kural.config import (
+    NS_PER_MS,
+    SPAN_DECIDE,
+    SPAN_MATCH,
+    SPAN_NORMALIZE,
+    SPAN_UNDO,
+    AppSettings,
+)
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.models import LedgerEventStatus
 from kadal_kural.domain.service import PreDispatchCreditFirewallService

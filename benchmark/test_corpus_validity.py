@@ -11,10 +11,9 @@ future corpus edit can't reintroduce either without the test suite catching it.
 
 from __future__ import annotations
 
+from benchmark.corpus import build_corpus
 from kadal_kural.config import AppSettings
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
-
-from benchmark.corpus import build_corpus
 
 _MIN_CORPUS_SIZE = 40
 _MAX_CORPUS_SIZE = 60

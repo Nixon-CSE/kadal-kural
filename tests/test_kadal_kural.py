@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import io
 import json
+import wave
 from pathlib import Path
 
 import pytest
-from kadal_kural.config import AppSettings
+
 from kadal_kural.config import (
     AMOUNT_CONFIDENCE_FLOOR,
     AMOUNT_IN_RANGE_CONFIDENCE,
     AMOUNT_OUT_OF_RANGE_SLOPE,
     UNPRICED_UNIT_RATE_CONFIDENCE,
+    AppSettings,
 )
 from kadal_kural.domain.matcher import BilingualCatalogMatcher, range_confidence
 from kadal_kural.domain.models import LedgerEventStatus, ValueRange
@@ -21,6 +24,7 @@ from kadal_kural.domain.normalizer import (
     strip_tamil_dative_suffix,
 )
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
+from kadal_kural.infrastructure.gnani_client import GnaniArthaSpeechClient
 from kadal_kural.infrastructure.persistence import AppendOnlyLedgerRepository
 
 # Hand-typed demo transcript (not probe output). Vanjaram is priced per kg, so it says கிலோ.
@@ -280,9 +284,6 @@ def test_confidence_gate_blocks_unknown_buyer(tmp_path: Path) -> None:
     assert len(decisions) == 1
     assert decisions[0].status == LedgerEventStatus.PENDING_CLARIFICATION
 
-import io
-import wave
-from kadal_kural.infrastructure.gnani_client import GnaniArthaSpeechClient
 
 
 @pytest.mark.asyncio

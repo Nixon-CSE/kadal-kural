@@ -40,7 +40,7 @@ class MicCaptureRecorder:
         self._started_ns = clock()
         self._bytes = 0
         self._segments: List[Dict[str, object]] = []
-        self._wav = wave.open(str(self.wav_path), "wb")
+        self._wav = wave.open(str(self.wav_path), "wb")  # noqa: SIM115 - open for the session, closed in close()
         self._wav.setnchannels(1)
         self._wav.setsampwidth(PCM_SAMPLE_WIDTH_BYTES)
         self._wav.setframerate(sample_rate)

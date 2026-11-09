@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
+
 from rapidfuzz import fuzz, process
 
 from kadal_kural.config import (

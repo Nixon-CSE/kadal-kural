@@ -34,7 +34,6 @@ from kadal_kural.infrastructure.timing import (
     utterance_timing_record,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -121,7 +120,7 @@ async def run_voice_turn(
             return await _speak(decision.tts_response_tamil)
         try:
             reply = await _speak(decision.tts_response_tamil)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any TTS failure gets one retry, never silence
             logger.warning("Clarification reply failed (%s: %s); retrying once", type(exc).__name__, exc)
         else:
             if reply.audio_wav_bytes or reply.was_interrupted:

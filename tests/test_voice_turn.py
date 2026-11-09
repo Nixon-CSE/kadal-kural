@@ -33,7 +33,11 @@ from kadal_kural.config import (
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.domain.telemetry import PipelineTelemetry, SpanTiming
-from kadal_kural.infrastructure.gnani_client import AssembledUtterance, MultiSegmentTradeAssembler, SynthesisTelemetry
+from kadal_kural.infrastructure.gnani_client import (
+    AssembledUtterance,
+    MultiSegmentTradeAssembler,
+    SynthesisTelemetry,
+)
 from kadal_kural.infrastructure.persistence import AppendOnlyLedgerRepository
 from kadal_kural.infrastructure.timing import log_utterance_timing, utterance_timing_record
 from kadal_kural.infrastructure.voice_turn import run_voice_turn

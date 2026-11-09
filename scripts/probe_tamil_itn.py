@@ -44,8 +44,8 @@ from typing import Any, Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from kadal_kural.config import AppSettings  # noqa: E402
-from kadal_kural.infrastructure.gnani_client import (  # noqa: E402
+from kadal_kural.config import AppSettings
+from kadal_kural.infrastructure.gnani_client import (
     GnaniArthaSpeechClient,
     GnaniConfigurationError,
 )
@@ -142,7 +142,7 @@ async def run_probe(limit: int, out_path: Path) -> None:
             print(f"[{i}/{len(phrases)}] {label}: {phrase!r}", file=sys.stderr)
             try:
                 record = await _probe_one_phrase(client, label, phrase)
-            except Exception as exc:  # noqa: BLE001 - log and continue; this is a research tool
+            except Exception as exc:
                 record = {
                     "label": label,
                     "input_text": phrase,

@@ -8,7 +8,11 @@ from typing import Dict, List, Tuple
 import pytest
 
 from benchmark.corpus import build_corpus
-from kadal_kural.config import LEFTOVER_NUMBER_CONFIDENCE, RATE_UNIT_MISMATCH_CONFIDENCE, AppSettings
+from kadal_kural.config import (
+    LEFTOVER_NUMBER_CONFIDENCE,
+    RATE_UNIT_MISMATCH_CONFIDENCE,
+    AppSettings,
+)
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.models import LedgerEventStatus, TradeIntent
 from kadal_kural.domain.normalizer import split_multi_trade_clauses

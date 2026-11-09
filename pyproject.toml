@@ -9,9 +9,33 @@ description = "Zero-Screen B2B Pre-Dispatch Credit Firewall built on Gnani AI's 
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{ name = "Nixon Immanuel Motha" }]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "websockets>=14.0",
+    "rapidfuzz>=3.9.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+bench = ["numpy>=1.26.0", "jiwer>=3.0.0"]
+dev = [
+    "httpx>=0.27.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+    "numpy>=1.26.0",
+    "jiwer>=3.0.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+kadal_kural = ["data/*.json"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
@@ -21,3 +45,25 @@ testpaths = ["tests", "benchmark"]
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+
+[tool.ruff.lint]
+# Explicit rule set so results don't shift with ruff's defaults across versions.
+select = ["E", "F", "W", "I", "B", "BLE", "SIM", "RUF100"]
+ignore = ["E501"]  # line length is enforced by the formatter budget, not per line
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.File", "fastapi.Header", "fastapi.Depends"]
+
+[tool.ruff.lint.per-file-ignores]
+# Measurement scripts isolate each live call: one failed stream is recorded, not raised.
+"scripts/**" = ["BLE001"]
+"benchmark/**" = ["BLE001"]
+"tests/**" = ["SIM117"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kadal_kural", "benchmark"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+mypy_path = "src"

@@ -305,8 +305,9 @@ def test_failure_modes_count_prisma_stt_stalls(scorer: Scorer) -> None:
 
 
 def test_vad_overrides_change_the_settings_and_the_recording_cache_key(settings: AppSettings, tmp_path: Path) -> None:
-    from benchmark.run_eval import WorkItem, parse_args, settings_from_args
     from pydantic import ValidationError
+
+    from benchmark.run_eval import WorkItem, parse_args, settings_from_args
 
     args = parse_args(["--vad-threshold", "0.6", "--min-speech-ms", "120"])
     overridden = settings_from_args(args)

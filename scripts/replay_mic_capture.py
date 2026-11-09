@@ -49,7 +49,7 @@ async def main_async(args: argparse.Namespace) -> int:
         for repeat in range(1, args.repeats + 1):
             segments: List[str] = []
 
-            async def _on_segment(text: str, latency_ms: float) -> None:
+            async def _on_segment(text: str, latency_ms: float, segments: List[str] = segments) -> None:
                 if text.strip():
                     segments.append(text.strip())
 
