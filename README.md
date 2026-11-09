@@ -66,7 +66,7 @@ cp .env.example .env            # set KADAL_GNANI_API_KEY
 make run                        # http://localhost:8000
 ```
 
-Open http://localhost:8000. The app has six pages: **Home** (3D overview), **Desk** (live console: open it, allow the microphone, press the space bar and speak an order; or type one, or pick one under *Try an order*), **Ledger** (search, filters, CSV export, per-entry drawer with a UPI QR), **Buyers** (credit dials and a what-if check), **Insights** (3D decision chart, confidence histogram, noise benchmark) and **Phone line** (the Gnani Agent Builder channel). ⌘K / Ctrl+K opens the command palette anywhere. Or use the API without a microphone:
+Open http://localhost:8000. The app has seven pages: **Home** (3D overview), **Play** (*Harbour Shift*, a game that teaches the problem and the solution: a five-chapter story and an endless “beat the firewall” challenge, both decided by the real firewall on an isolated sandbox ledger), **Desk** (live console: open it, allow the microphone, press the space bar and speak an order; or type one, or pick one under *Try an order*), **Ledger** (search, filters, CSV export, per-entry drawer with a UPI QR), **Buyers** (credit dials and a what-if check), **Insights** (3D decision chart, confidence histogram, noise benchmark) and **Phone line** (the Gnani Agent Builder channel). ⌘K / Ctrl+K opens the command palette anywhere. Or use the API without a microphone:
 
 ```bash
 curl -s localhost:8000/api/v1/ingest -H 'Content-Type: application/json' \
@@ -101,6 +101,7 @@ Starting from opening balances (Senthil ₹1,28,000 of ₹1,50,000; Kumaran ₹4
 | `POST /api/v1/upload-wav` | WAV file → paced Prisma stream → decisions + replies |
 | `GET /api/v1/state` | Balances and audit log, including what was heard per row |
 | `POST /api/v1/reset` | Reset to catalog opening balances (demo) |
+| `POST /api/v1/sandbox/evaluate` · `/sandbox/reset` | The game's sandbox: the same firewall on an isolated, throwaway ledger |
 | `GET /healthz` | Liveness and whether a Gnani key is configured |
 
 Interactive OpenAPI docs: http://localhost:8000/docs
@@ -127,6 +128,7 @@ make bench     # re-score 405 cached Prisma transcripts, no API calls
 
 - **238 tests:** normalizer, matcher and clause boundaries, credit firewall and undo invariants, STT fault injection, assembler timing with a fake clock, barge-in, WebSocket lifecycle, audit log and the phone channel. Two cases are kept as strict expected failures for a documented limitation (in-range quantity digit errors).
 - **Benchmark:** 45 utterances × 9 conditions (clean plus harbour, market, traffic and ice-crusher noise at 10 and 5 dB), with WER, per-field accuracy, silent financial error rate, threshold sensitivity, before/after comparisons and per-stage latency.
+- **Frontend performance**, measured with Chrome on a real GPU ([web/perf/](web/perf/), macOS Chrome via the DevTools protocol): click-to-content navigation median **612 → 146 ms**; scrolling holds 60 fps (p95 frame 17.5 ms); 3D canvases render only while visible, capped at 30–45 fps, with shadows and lighting baked once. With WebGL off, an idle page does 27 ms of work per 5 s.
 - **CI:** GitHub Actions runs lint, type check and tests (Python 3.9 and 3.12), a type-checked production build of the desk, and a Docker build with a health smoke test.
 
 ## Project layout

@@ -2,7 +2,6 @@ import { Command, Mic, Phone, Waves } from "lucide-react";
 import { motion, useScroll, useSpring } from "motion/react";
 import { NavLink, useLocation } from "react-router";
 
-import GradientText from "@/components/GradientText";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -25,7 +24,7 @@ export function Header({ desk, listening, onCommand }: { desk: DeskState | null;
   const progress = useSpring(scrollYProgress, { stiffness: 140, damping: 24 });
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border/70 bg-background/70 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 border-b border-border/70 bg-background/95">
       <div className="mx-auto flex max-w-[1480px] items-center gap-4 px-4 py-2.5 sm:px-6">
         <NavLink to="/" className="flex shrink-0 items-center gap-2.5" aria-label="Kadal Kural home">
           <motion.span
@@ -39,9 +38,7 @@ export function Header({ desk, listening, onCommand }: { desk: DeskState | null;
             <Waves className="size-5.5 text-lime" strokeWidth={2.4} />
           </motion.span>
           <span className="hidden leading-tight sm:block">
-            <GradientText colors={["#0f1d14", "#4d7c0f", "#84cc16", "#0f1d14"]} animationSpeed={6} className="text-lg font-extrabold tracking-tight [font-stretch:115%]">
-              Kadal Kural
-            </GradientText>
+            <span className="text-lg font-extrabold tracking-tight [font-stretch:115%] bg-gradient-to-r from-ink via-lime-deep to-ink bg-clip-text text-transparent">Kadal Kural</span>
             <span className="block text-[11px] text-muted-foreground">{desk?.domain_title ?? "Credit desk"}</span>
           </span>
         </NavLink>

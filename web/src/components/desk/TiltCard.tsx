@@ -21,7 +21,7 @@ export function TiltCard({ children, className, max = 7, glare = true }: TiltCar
   const ry = useSpring(useTransform(px, [0, 1], [-max, max]), spring);
   const gx = useTransform(px, (v) => `${v * 100}%`);
   const gy = useTransform(py, (v) => `${v * 100}%`);
-  const glareBg = useMotionTemplate`radial-gradient(420px circle at ${gx} ${gy}, rgba(255,255,255,0.75), rgba(217,249,157,0.18) 35%, transparent 60%)`;
+  const glareBg = useMotionTemplate`radial-gradient(420px circle at ${gx} ${gy}, rgba(255,255,255,0.55), rgba(217,249,157,0.12) 35%, transparent 60%)`;
 
   const onMove = (e: PointerEvent<HTMLDivElement>) => {
     if (reduced || e.pointerType === "touch") return;
@@ -38,10 +38,10 @@ export function TiltCard({ children, className, max = 7, glare = true }: TiltCar
         onPointerLeave={onLeave}
         style={reduced ? undefined : { rotateX: rx, rotateY: ry, transformStyle: "preserve-3d" }}
         whileHover={reduced ? undefined : { y: -3 }}
-        className={cn("surface relative h-full overflow-hidden rounded-2xl transition-shadow hover:surface-lift", className)}
+        className={cn("group/tilt surface relative h-full overflow-hidden rounded-2xl transition-shadow hover:surface-lift", className)}
       >
         {glare && !reduced && (
-          <motion.div aria-hidden className="pointer-events-none absolute inset-0 z-10 mix-blend-soft-light" style={{ background: glareBg }} />
+          <motion.div aria-hidden className="pointer-events-none absolute inset-0 z-10 opacity-0 transition-opacity duration-300 group-hover/tilt:opacity-100" style={{ background: glareBg }} />
         )}
         <div className="relative h-full" style={reduced ? undefined : { transform: "translateZ(24px)" }}>
           {children}

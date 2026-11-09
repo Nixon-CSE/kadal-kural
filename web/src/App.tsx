@@ -1,19 +1,18 @@
-import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router";
 
 import { DeskProvider } from "@/app/DeskProvider";
 import { Layout } from "@/app/Layout";
+import BuyersPage from "@/pages/BuyersPage";
 import DeskPage from "@/pages/DeskPage";
 import HomePage from "@/pages/HomePage";
+import InsightsPage from "@/pages/InsightsPage";
+import LedgerPage from "@/pages/LedgerPage";
+import NotFoundPage from "@/pages/NotFoundPage";
+import PhonePage from "@/pages/PhonePage";
+import PlayPage from "@/pages/PlayPage";
 
-const LedgerPage = lazy(() => import("@/pages/LedgerPage"));
-const BuyersPage = lazy(() => import("@/pages/BuyersPage"));
-const InsightsPage = lazy(() => import("@/pages/InsightsPage"));
-const PhonePage = lazy(() => import("@/pages/PhonePage"));
-const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
-
-const page = (el: React.ReactNode) => <Suspense fallback={<div className="h-[60vh] animate-pulse rounded-3xl bg-white/50" />}>{el}</Suspense>;
-
+// Pages are small and imported directly: a lazy page suspends on every first visit and React holds
+// the fallback for 300 ms. The heavy parts (three.js scenes) stay lazy inside the pages.
 export default function App() {
   return (
     <BrowserRouter>
@@ -21,12 +20,13 @@ export default function App() {
         <Routes>
           <Route element={<Layout />}>
             <Route index element={<HomePage />} />
+            <Route path="play" element={<PlayPage />} />
             <Route path="desk" element={<DeskPage />} />
-            <Route path="ledger" element={page(<LedgerPage />)} />
-            <Route path="buyers" element={page(<BuyersPage />)} />
-            <Route path="insights" element={page(<InsightsPage />)} />
-            <Route path="phone" element={page(<PhonePage />)} />
-            <Route path="*" element={page(<NotFoundPage />)} />
+            <Route path="ledger" element={<LedgerPage />} />
+            <Route path="buyers" element={<BuyersPage />} />
+            <Route path="insights" element={<InsightsPage />} />
+            <Route path="phone" element={<PhonePage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>
       </DeskProvider>

@@ -1,15 +1,15 @@
 import { Waves } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { cloneElement, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useOutlet } from "react-router";
 import { Toaster } from "sonner";
 
-import ClickSpark from "@/components/ClickSpark";
 import { CommandMenu } from "@/components/desk/CommandMenu";
 import { Header } from "@/components/desk/Header";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NAV } from "@/lib/nav";
 import type { LayoutOutlet } from "@/pages/layout-outlet";
+import { PAGE_LOADERS } from "@/pages/loaders";
 
 import { useDeskContext } from "./desk-context";
 
@@ -28,6 +28,14 @@ export function Layout() {
 
   useEffect(() => { window.scrollTo({ top: 0 }); }, [location.pathname]);
 
+  // Warm every page's code while the browser is idle, so navigation never waits for a download.
+  useEffect(() => {
+    const warm = () => { for (const load of PAGE_LOADERS) void load(); };
+    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+    const id = ric ? ric(warm) : window.setTimeout(warm, 1500);
+    return () => { if (!ric) window.clearTimeout(id); };
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPaletteOpen((o) => !o); return; }
@@ -43,24 +51,16 @@ export function Layout() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <ClickSpark sparkColor={["#84cc16", "#b5f23d", "#0f1d14"]} sparkSize={9} sparkRadius={18} sparkCount={9} duration={420}>
+      <>
         <div className="stage-bg" aria-hidden />
-        <div className="grain" aria-hidden />
         <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-ink focus:px-3 focus:py-2 focus:text-lime">Skip to content</a>
         <Header desk={desk.desk} listening={desk.listening} onCommand={() => setPaletteOpen(true)} />
 
         <main id="main" className="mx-auto max-w-[1480px] px-4 py-6 sm:px-6">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={location.pathname}
-              initial={{ opacity: 0, y: 14, scale: 0.995 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.995 }}
-              transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }}
-            >
-              {outlet && cloneElement(outlet, { key: location.pathname })}
-            </motion.div>
-          </AnimatePresence>
+          {/* Instant swap, short fade-in: no waiting for the old page to leave. */}
+          <motion.div key={location.pathname} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: "easeOut" }}>
+            {outlet && cloneElement(outlet, { key: location.pathname })}
+          </motion.div>
         </main>
 
         <footer className="mt-10 border-t border-border/70 bg-white/50 backdrop-blur">
@@ -84,7 +84,7 @@ export function Layout() {
             </div>
           </div>
         </footer>
-      </ClickSpark>
+      </>
 
       <CommandMenu
         open={paletteOpen}

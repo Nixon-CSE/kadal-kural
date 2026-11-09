@@ -1,5 +1,6 @@
 export const NAV = [
   { to: "/", label: "Home" },
+  { to: "/play", label: "Play" },
   { to: "/desk", label: "Desk" },
   { to: "/ledger", label: "Ledger" },
   { to: "/buyers", label: "Buyers" },

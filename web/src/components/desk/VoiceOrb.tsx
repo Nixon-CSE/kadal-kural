@@ -1,9 +1,11 @@
 import { ContactShadows, Environment, Float, Lightformer, MeshDistortMaterial, Sparkles } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef, type MutableRefObject } from "react";
 import * as THREE from "three";
 
 import type { Mode } from "@/hooks/useDesk";
+
+import { SceneCanvas } from "../three/SceneCanvas";
 
 export type OrbTone = "lime" | "hold" | "ask";
 
@@ -63,7 +65,7 @@ function Orb({ mode, tone, level, reduced }: OrbProps) {
     <group>
       <Float speed={reduced ? 0 : 1.6} rotationIntensity={0.25} floatIntensity={0.6}>
         <mesh ref={mesh} castShadow>
-          <icosahedronGeometry args={[1, 64]} />
+          <icosahedronGeometry args={[1, 32]} />
           <MeshDistortMaterial
             ref={mat as never}
             color={PALETTE.idle}
@@ -86,8 +88,8 @@ function Orb({ mode, tone, level, reduced }: OrbProps) {
           <meshStandardMaterial color="#84cc16" roughness={0.3} metalness={0.3} transparent opacity={0.65} />
         </mesh>
       </Float>
-      {!reduced && <Sparkles count={36} scale={[3.6, 3, 2.6]} size={2.4} speed={0.35} color="#84cc16" opacity={0.7} />}
-      <ContactShadows position={[0, -1.55, 0]} opacity={0.35} scale={6} blur={2.6} far={3} color="#0f1d14" />
+      {!reduced && <Sparkles count={18} scale={[3.6, 3, 2.6]} size={2.4} speed={0.35} color="#84cc16" opacity={0.7} />}
+      <ContactShadows frames={1} position={[0, -1.55, 0]} opacity={0.35} scale={6} blur={2.6} far={3} color="#0f1d14" />
     </group>
   );
 }
@@ -95,18 +97,16 @@ function Orb({ mode, tone, level, reduced }: OrbProps) {
 export function VoiceOrb(props: OrbProps & { className?: string }) {
   const { className, ...orb } = props;
   return (
-    <div className={className} aria-hidden="true">
-      <Canvas dpr={[1, 2]} camera={{ position: [0, 0.15, 5.4], fov: 40 }} gl={{ antialias: true, alpha: true }}>
+    <SceneCanvas className={className} fps={45} aria-hidden="true" camera={{ position: [0, 0.15, 5.4], fov: 40 }}>
         <ambientLight intensity={0.55} />
         <directionalLight position={[3, 4, 3]} intensity={1.4} />
         <Orb {...orb} />
         {/* Studio lighting built from light panels: no HDR download, works offline. */}
-        <Environment resolution={256}>
+        <Environment resolution={128} frames={1}>
           <Lightformer form="rect" intensity={2.4} position={[0, 4, -3]} scale={[8, 3, 1]} />
           <Lightformer form="rect" intensity={1.4} position={[-4, 1, 2]} scale={[3, 6, 1]} rotation-y={Math.PI / 2} />
           <Lightformer form="ring" intensity={1.8} color="#d9f99d" position={[4, 2, 2]} scale={2} />
         </Environment>
-      </Canvas>
-    </div>
+    </SceneCanvas>
   );
 }

@@ -1,4 +1,4 @@
-import { ArrowRight, AudioLines, Check, Gauge, Mic, Phone, ShieldCheck, Timer, Waves } from "lucide-react";
+import { ArrowRight, AudioLines, Check, Gamepad2, Gauge, Mic, Phone, ShieldCheck, Timer, Waves } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { lazy, Suspense } from "react";
 import { Link, useNavigate } from "react-router";
@@ -6,13 +6,12 @@ import { Link, useNavigate } from "react-router";
 import { useDeskContext } from "@/app/desk-context";
 import CircularText from "@/components/CircularText";
 import CountUp from "@/components/CountUp";
-import ScrollVelocity from "@/components/ScrollVelocity";
-import StarBorder from "@/components/StarBorder";
 import { TiltCard } from "@/components/desk/TiltCard";
 import { WordRotator } from "@/components/desk/WordRotator";
 import { TRY_ORDERS } from "@/lib/format";
+import { loadHeroScene } from "@/pages/loaders";
 
-const HeroScene = lazy(() => import("@/components/three/HeroScene"));
+const HeroScene = lazy(loadHeroScene);
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -67,10 +66,13 @@ export default function HomePage() {
             anything over a buyer's credit limit, and asks again whenever it is unsure. No AI model ever does the arithmetic.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <StarBorder as={Link} to="/desk" theme="dark" color="#b5f23d" duration={4} className="!rounded-full">
-              <span className="inline-flex items-center gap-2 px-2 text-base font-bold">Open the desk <ArrowRight className="size-4" /></span>
-            </StarBorder>
-            <button type="button" onClick={tryFirst} className="surface inline-flex h-12 items-center gap-2 rounded-full px-5 font-semibold hover:border-lime">
+            <Link to="/desk" className="orbit-border ink-key inline-flex h-12 items-center gap-2 rounded-full px-6 text-base font-bold">
+              Open the desk <ArrowRight className="size-4" />
+            </Link>
+            <Link to="/play" className="surface inline-flex h-12 items-center gap-2 rounded-full px-5 font-semibold hover:border-lime">
+              <Gamepad2 className="size-4" /> Play Harbour Shift
+            </Link>
+            <button type="button" onClick={tryFirst} className="inline-flex h-12 items-center gap-2 rounded-full px-3 font-semibold text-muted-foreground hover:text-foreground">
               <Mic className="size-4" /> Run a sample order
             </button>
           </div>
@@ -89,12 +91,13 @@ export default function HomePage() {
 
       {/* Marquee of real orders */}
       <section aria-label="Orders the desk understands" className="-mx-4 overflow-hidden border-y border-border/70 bg-white/60 py-5 sm:-mx-6">
-        <ScrollVelocity
-          texts={[TRY_ORDERS.map((t) => t.text).join("   ✦   ")]}
-          velocity={40}
-          className="tamil px-6 text-2xl font-bold text-ink/80"
-          numCopies={4}
-        />
+        <div className="marquee" aria-hidden>
+          {[0, 1].map((copy) => (
+            <p key={copy} lang="ta" className="tamil flex shrink-0 items-center gap-10 pr-10 text-2xl font-bold whitespace-nowrap text-ink/80">
+              {TRY_ORDERS.map((t) => <span key={t.text} className="inline-flex items-center gap-10">{t.text}<span className="text-lime-deep">✦</span></span>)}
+            </p>
+          ))}
+        </div>
       </section>
 
       {/* How it works */}

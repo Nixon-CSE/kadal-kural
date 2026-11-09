@@ -7,10 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { LedgerEvent } from "@/lib/api";
 import { inr, statusOf } from "@/lib/format";
 import { tally } from "@/lib/ledger";
+import { loadBars3D } from "@/pages/loaders";
 
 import { PageHeading } from "./PageHeading";
 
-const Bars3D = lazy(() => import("@/components/three/Bars3D"));
+const Bars3D = lazy(loadBars3D);
 
 // benchmark/REPORT.md, 405 cached Prisma transcripts (45 utterances × 9 conditions).
 const BENCH = [

@@ -109,3 +109,14 @@ export type LiveMessage =
       decisions: Decision[];
       snapshot: Snapshot;
     };
+
+/** The game's sandbox firewall: the same engine on an isolated ledger. */
+export const sandbox = {
+  reset: () => fetch("/api/v1/sandbox/reset", { method: "POST" }).then((r) => json<{ buyers: Buyer[] }>(r)),
+  evaluate: (transcript: string) =>
+    fetch("/api/v1/sandbox/evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript }),
+    }).then((r) => json<{ decisions: Decision[]; buyers: Buyer[] }>(r)),
+};

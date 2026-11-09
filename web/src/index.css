@@ -167,18 +167,9 @@
   transform: perspective(700px) rotateX(62deg);
   transform-origin: top center;
   mask-image: linear-gradient(to top, black 10%, transparent 85%);
-  animation: grid-drift 18s linear infinite;
-}
-@keyframes grid-drift {
-  to {
-    background-position: 0 56px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .stage-bg::before {
-    animation: none;
-  }
   *,
   *::before,
   *::after {
@@ -187,12 +178,62 @@
   }
 }
 
-/* Film grain: a barely-there texture so large white surfaces read as material, not screen. */
-.grain {
-  pointer-events: none;
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+
+/* GPU-composited marquee: one transform animation, no per-frame JavaScript. */
+.marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 48s linear infinite;
+}
+.marquee:hover {
+  animation-play-state: paused;
+}
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Chapter 1 noise meter: transform-only animation, composited on the GPU. */
+.noise-bar {
+  height: 100%;
+  transform-origin: bottom;
+  animation: noise 520ms ease-in-out infinite alternate;
+}
+@keyframes noise {
+  from {
+    transform: scaleY(0.15);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* A lime arc orbiting a button's edge: one animated custom property, painted natively. */
+@property --orbit {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.orbit-border {
+  position: relative;
+  isolation: isolate;
+}
+.orbit-border::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  z-index: -1;
+  border-radius: inherit;
+  background: conic-gradient(from var(--orbit), transparent 0 70%, #b5f23d 85%, transparent 100%);
+}
+/* Custom-property animations recalc style every frame, so the orbit runs only while it is wanted. */
+.orbit-border:hover::before,
+.orbit-border:focus-visible::before {
+  animation: orbit 2.4s linear infinite;
+}
+@keyframes orbit {
+  to {
+    --orbit: 360deg;
+  }
 }

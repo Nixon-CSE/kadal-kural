@@ -1,15 +1,17 @@
 import { ContactShadows, Environment, Float, Lightformer, MeshDistortMaterial, RoundedBox, Sparkles } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import * as THREE from "three";
+
+import { SceneCanvas } from "./SceneCanvas";
 
 /** A white ledger slip with a lime status edge: the product's unit of work, as an object. */
 function Slip({ position, rotation, tone = "#b5f23d", scale = 1 }: { position: [number, number, number]; rotation: [number, number, number]; tone?: string; scale?: number }) {
   return (
     <Float speed={1.4} rotationIntensity={0.6} floatIntensity={0.9}>
       <group position={position} rotation={rotation} scale={scale}>
-        <RoundedBox args={[1.5, 0.95, 0.06]} radius={0.06} smoothness={4} castShadow>
-          <meshPhysicalMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.35} roughness={0.4} clearcoat={0.6} clearcoatRoughness={0.3} />
+        <RoundedBox args={[1.5, 0.95, 0.06]} radius={0.06} smoothness={2}>
+          <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.35} roughness={0.4} />
         </RoundedBox>
         <RoundedBox args={[0.08, 0.95, 0.07]} radius={0.03} position={[-0.71, 0, 0.005]}>
           <meshStandardMaterial color={tone} emissive={tone} emissiveIntensity={0.25} roughness={0.3} />
@@ -34,9 +36,9 @@ function Coin({ position, color, speed = 1 }: { position: [number, number, numbe
   useFrame((_, dt) => { if (ref.current) ref.current.rotation.y += dt * speed; });
   return (
     <Float speed={2} floatIntensity={1.2}>
-      <mesh ref={ref} position={position} rotation={[Math.PI / 2, 0, 0]} castShadow>
-        <cylinderGeometry args={[0.32, 0.32, 0.07, 48]} />
-        <meshPhysicalMaterial color={color} emissive={color} emissiveIntensity={color === "#0f1d14" ? 0 : 0.18} metalness={0.25} roughness={0.28} clearcoat={1} clearcoatRoughness={0.15} />
+      <mesh ref={ref} position={position} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.32, 0.32, 0.07, 32]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={color === "#0f1d14" ? 0 : 0.18} metalness={0.25} roughness={0.28} />
       </mesh>
     </Float>
   );
@@ -64,8 +66,8 @@ function Core({ reduced }: { reduced: boolean }) {
   });
   return (
     <Float speed={reduced ? 0 : 1.2} floatIntensity={0.5}>
-      <mesh castShadow>
-        <icosahedronGeometry args={[1.05, 64]} />
+      <mesh>
+        <icosahedronGeometry args={[1.05, 32]} />
         <MeshDistortMaterial color="#b5f23d" emissive="#a3e635" emissiveIntensity={0.25} roughness={0.12} metalness={0.05} clearcoat={1} clearcoatRoughness={0.1} distort={reduced ? 0.15 : 0.3} speed={reduced ? 0 : 1.6} />
       </mesh>
       <mesh ref={ring} rotation={[1.2, 0.2, 0]}>
@@ -82,9 +84,9 @@ function Core({ reduced }: { reduced: boolean }) {
 
 export default function HeroScene({ reduced }: { reduced: boolean }) {
   return (
-    <Canvas dpr={[1, 2]} camera={{ position: [0, 0.3, 8.2], fov: 38 }} gl={{ antialias: true, alpha: true }} shadows>
+    <SceneCanvas className="absolute inset-0" maxDpr={1.25} camera={{ position: [0, 0.3, 8.2], fov: 38 }}>
       <ambientLight intensity={0.6} />
-      <directionalLight position={[4, 6, 4]} intensity={1.5} castShadow />
+      <directionalLight position={[4, 6, 4]} intensity={1.5} />
       <Rig reduced={reduced} />
       <Core reduced={reduced} />
       <Slip position={[-2.7, 1.1, -0.6]} rotation={[0.1, 0.5, -0.12]} />
@@ -94,13 +96,13 @@ export default function HeroScene({ reduced }: { reduced: boolean }) {
       <Coin position={[-1.35, 1.75, 0.6]} color="#b5f23d" speed={1.2} />
       <Coin position={[1.5, 1.9, 0.2]} color="#0f1d14" speed={-0.9} />
       <Coin position={[0.1, -1.95, 1]} color="#d9f99d" speed={1.6} />
-      {!reduced && <Sparkles count={60} scale={[8, 5, 4]} size={2.2} speed={0.3} color="#84cc16" opacity={0.6} />}
-      <ContactShadows position={[0, -2.4, 0]} opacity={0.3} scale={12} blur={2.8} far={4} color="#0f1d14" />
-      <Environment resolution={256}>
+      {!reduced && <Sparkles count={24} scale={[8, 5, 4]} size={2.2} speed={0.3} color="#84cc16" opacity={0.6} />}
+      <ContactShadows frames={1} position={[0, -2.4, 0]} opacity={0.3} scale={12} blur={2.8} far={4} color="#0f1d14" />
+      <Environment resolution={128} frames={1}>
         <Lightformer form="rect" intensity={2.4} position={[0, 5, -4]} scale={[10, 3, 1]} />
         <Lightformer form="rect" intensity={1.5} position={[-5, 1, 2]} scale={[3, 7, 1]} rotation-y={Math.PI / 2} />
         <Lightformer form="ring" intensity={2} color="#d9f99d" position={[5, 2, 2]} scale={2.5} />
       </Environment>
-    </Canvas>
+    </SceneCanvas>
   );
 }

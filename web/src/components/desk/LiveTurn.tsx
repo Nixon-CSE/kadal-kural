@@ -11,11 +11,12 @@ import { Kbd } from "@/components/ui/kbd";
 import type { DeskApi } from "@/hooks/useDesk";
 import { KIND_CLASSES, statusOf, TRY_ORDERS } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { loadVoiceOrb } from "@/pages/loaders";
 
 import { DecisionCard } from "./DecisionCard";
 import type { OrbTone } from "./VoiceOrb";
 
-const VoiceOrb = lazy(() => import("./VoiceOrb").then((m) => ({ default: m.VoiceOrb })));
+const VoiceOrb = lazy(() => loadVoiceOrb().then((m) => ({ default: m.VoiceOrb })));
 
 const MODE_HINT: Record<string, string> = {
   idle: "Press the microphone or the space bar, then say an order in Tamil or Tanglish.",

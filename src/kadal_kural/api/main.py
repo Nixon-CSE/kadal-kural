@@ -17,6 +17,7 @@ import io
 import json
 import logging
 import re
+import tempfile
 import time
 import wave
 from contextlib import asynccontextmanager
@@ -72,7 +73,7 @@ from kadal_kural.infrastructure.voice_turn import VoiceTurn, run_voice_turn
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-DESK_PAGES = ("/desk", "/ledger", "/buyers", "/insights", "/phone")
+DESK_PAGES = ("/play", "/desk", "/ledger", "/buyers", "/insights", "/phone")
 
 
 def _enable_timing_log() -> None:
@@ -179,6 +180,10 @@ def phone_transcript(fields: Mapping[str, str]) -> Optional[str]:
     return None
 
 
+class SandboxRequest(BaseModel):
+    transcript: str = Field(..., min_length=2, max_length=400)
+
+
 class PhoneTurnResponse(BaseModel):
     """What the agent speaks (``reply_text``) plus a compact, machine-readable summary."""
 
@@ -203,6 +208,13 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
     repo = AppendOnlyLedgerRepository(cfg.db_path, list(matcher.buyers.values()))
     firewall = PreDispatchCreditFirewallService(cfg, matcher, repo)
     speech_client = GnaniArthaSpeechClient(cfg)
+    # Sandbox for the guided game: the same deterministic firewall on its own throwaway ledger,
+    # so play never touches real balances. Requests are serialised; the state is shared.
+    sandbox_repo = AppendOnlyLedgerRepository(
+        str(Path(tempfile.mkdtemp(prefix="kadal-sandbox-")) / "sandbox.db"), list(matcher.buyers.values())
+    )
+    sandbox = PreDispatchCreditFirewallService(cfg, matcher, sandbox_repo)
+    sandbox_lock = asyncio.Lock()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -523,6 +535,23 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             if capture is not None:
                 capture.close()
                 logger.info("Saved mic capture %s and %s", capture.wav_path, capture.sidecar_path)
+
+    @app.post("/api/v1/sandbox/reset")
+    async def sandbox_reset() -> Dict[str, Any]:
+        async with sandbox_lock:
+            sandbox_repo.reset_to_seed_state()
+            sandbox.held_context = None
+            return {"buyers": sandbox_repo.fetch_dashboard_snapshot()["buyers"]}
+
+    @app.post("/api/v1/sandbox/evaluate")
+    async def sandbox_evaluate(payload: SandboxRequest) -> Dict[str, Any]:
+        """Runs one utterance through the sandbox firewall (no speech, no real ledger)."""
+        async with sandbox_lock:
+            decisions = sandbox.evaluate_utterance(payload.transcript)
+            return {
+                "decisions": [d.model_dump(mode="json") for d in decisions],
+                "buyers": sandbox_repo.fetch_dashboard_snapshot()["buyers"],
+            }
 
     @app.post("/api/v1/reset")
     async def reset_ledger() -> Dict[str, Any]:

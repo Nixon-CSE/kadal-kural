@@ -1,7 +1,9 @@
 import { ContactShadows, Environment, Html, Lightformer, OrbitControls, RoundedBox } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import * as THREE from "three";
+
+import { SceneCanvas } from "./SceneCanvas";
 
 export interface Bar3D {
   label: string;
@@ -20,8 +22,8 @@ function Bar({ bar, x, max, reduced }: { bar: Bar3D; x: number; max: number; red
   return (
     <group position={[x, 0, 0]}>
       <group ref={group} scale={[1, 0.01, 1]}>
-        <RoundedBox args={[0.8, 1, 0.8]} radius={0.08} smoothness={4} position={[0, 0.5, 0]} castShadow>
-          <meshPhysicalMaterial color={bar.color} roughness={0.25} clearcoat={0.8} clearcoatRoughness={0.2} metalness={0.05} />
+        <RoundedBox args={[0.8, 1, 0.8]} radius={0.08} smoothness={4} position={[0, 0.5, 0]}>
+          <meshStandardMaterial color={bar.color} roughness={0.3} metalness={0.05} />
         </RoundedBox>
       </group>
       <Html position={[0, target + 0.35, 0]} center distanceFactor={7} zIndexRange={[10, 0]}>
@@ -39,22 +41,22 @@ export default function Bars3D({ bars, reduced }: { bars: Bar3D[]; reduced: bool
   const gap = 1.25;
   const start = -((bars.length - 1) * gap) / 2;
   return (
-    <Canvas dpr={[1, 2]} camera={{ position: [3.2, 3.4, 6.2], fov: 36 }} shadows gl={{ antialias: true, alpha: true }}>
+    <SceneCanvas className="absolute inset-0" camera={{ position: [3.2, 3.4, 6.2], fov: 36 }}>
       <ambientLight intensity={0.6} />
-      <directionalLight position={[4, 7, 5]} intensity={1.4} castShadow />
+      <directionalLight position={[4, 7, 5]} intensity={1.4} />
       <group position={[0, -1.2, 0]}>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[bars.length * gap + 1.5, 3]} />
           <meshStandardMaterial color="#f4f8ee" roughness={0.9} />
         </mesh>
         {bars.map((b, i) => <Bar key={b.label} bar={b} x={start + i * gap} max={max} reduced={reduced} />)}
-        <ContactShadows position={[0, 0.01, 0]} opacity={0.25} scale={10} blur={2} far={3} />
+        <ContactShadows frames={1} position={[0, 0.01, 0]} opacity={0.25} scale={10} blur={2} far={3} />
       </group>
       <OrbitControls enablePan={false} enableZoom={false} autoRotate={!reduced} autoRotateSpeed={0.6} minPolarAngle={0.6} maxPolarAngle={1.35} />
-      <Environment resolution={128}>
+      <Environment resolution={128} frames={1}>
         <Lightformer form="rect" intensity={2} position={[0, 5, -3]} scale={[8, 3, 1]} />
         <Lightformer form="rect" intensity={1.2} position={[-4, 2, 3]} scale={[3, 5, 1]} rotation-y={Math.PI / 2} />
       </Environment>
-    </Canvas>
+    </SceneCanvas>
   );
 }
