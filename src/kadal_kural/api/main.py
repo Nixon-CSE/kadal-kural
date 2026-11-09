@@ -43,6 +43,13 @@ from pydantic import BaseModel, Field
 from websockets.exceptions import ConnectionClosed
 
 from kadal_kural.api.edge import PublicEdgeGuard
+from kadal_kural.api.security import (
+    LocalOriginGuard,
+    RequestSizeLimit,
+    SecurityHeaders,
+    SlidingWindowRateLimiter,
+    client_address,
+)
 from kadal_kural.config import (
     ASSEMBLER_AWAITING_RATE_WINDOW_SEC,
     ASSEMBLER_INCOMPLETE_WINDOW_SEC,
@@ -96,7 +103,7 @@ def _enable_timing_log() -> None:
 def _decision_items(turn: VoiceTurn) -> List[Dict[str, Any]]:
     """Serializes each decision with its spoken reply (TTFB and WAV) when one was synthesized."""
     items: List[Dict[str, Any]] = []
-    for decision, reply in zip(turn.evaluation.decisions, turn.replies):
+    for decision, reply in zip(turn.evaluation.decisions, turn.replies, strict=True):
         item = decision.model_dump()
         if reply is not None:
             item["timbre_ttfb_ms"] = reply.ttfb_ms
@@ -114,8 +121,14 @@ def _decision_items(turn: VoiceTurn) -> List[Dict[str, Any]]:
     return items
 
 
+# Longest transcript accepted from any channel: a few orders in one breath fit in a fraction of it.
+MAX_TRANSCRIPT_CHARS = 500
+# Largest live-audio frame accepted from the browser (it sends 512-sample, 1 KB frames).
+MAX_LIVE_FRAME_BYTES = 64 * 1024
+
+
 class UtteranceIngestRequest(BaseModel):
-    transcript: str = Field(..., min_length=2)
+    transcript: str = Field(..., min_length=2, max_length=MAX_TRANSCRIPT_CHARS)
     stt_latency_ms: float = Field(default=0.0, ge=0.0)  # only a caller-measured STT figure; no STT runs here
     synthesize_tts: bool = Field(default=True)
 
@@ -252,8 +265,17 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         version="1.0.0",
         lifespan=lifespan,
     )
+    # Outermost last: security headers on every response, then the tunnel's path allow-list, then the
+    # local browser checks (Host, cross-site), then body size limits closest to the routes.
+    app.add_middleware(
+        RequestSizeLimit,
+        limits={"/api/v1/phone-turn": cfg.max_phone_body_bytes, "/api/v1/upload-wav": cfg.max_upload_bytes},
+    )
+    app.add_middleware(LocalOriginGuard, extra_hosts=cfg.allowed_hosts.split(","))
     if cfg.public_edge_guard:
         app.add_middleware(PublicEdgeGuard)
+    app.add_middleware(SecurityHeaders)
+    phone_limiter = SlidingWindowRateLimiter(cfg.phone_rate_limit_per_minute)
 
     @app.get("/healthz")
     async def healthcheck() -> Dict[str, Any]:
@@ -336,6 +358,11 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         fields or query parameters under ``transcript``, ``user_text`` or ``text``. A turn with
         no usable transcript still gets a 200 and the clarification prompt, and writes nothing.
         """
+        retry_after = phone_limiter.check(client_address(request.scope))
+        if retry_after is not None:  # checked before the token, so guessing it is rate limited too
+            raise HTTPException(
+                status_code=429, detail="Too many phone requests", headers={"Retry-After": str(int(retry_after) + 1)}
+            )
         _require_phone_token(x_kadal_token, authorization)
         content_type = request.headers.get("content-type", "")
         raw = await request.body()
@@ -357,6 +384,8 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             sorted(k.lower() for k in request.headers if k.lower() not in _SECRET_HEADERS),
             "yes" if transcript else "MISSING",
         )
+        if transcript is not None and len(transcript) > MAX_TRANSCRIPT_CHARS:
+            raise HTTPException(status_code=422, detail=f"Transcript longer than {MAX_TRANSCRIPT_CHARS} characters")
         if transcript is None:
             return PhoneTurnResponse(
                 reply_text=CLARIFICATION_PROMPT_TAMIL, booked_count=0, held_count=0, statuses=[],
@@ -552,20 +581,36 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                         return
 
                 prisma_recv_task = asyncio.create_task(_prisma_to_client())
+                session_deadline = time.monotonic() + cfg.live_session_max_seconds
                 try:
                     while True:
+                        if time.monotonic() > session_deadline:
+                            logger.info("Live audio session reached %d s; closing", cfg.live_session_max_seconds)
+                            await client_ws.send_json(
+                                {"type": "error", "message": "Session time limit reached. Press the microphone to start again."}
+                            )
+                            await client_ws.close(code=1000)
+                            break
                         msg = await client_ws.receive()
                         if msg["type"] == "websocket.disconnect":  # receive() must not be called again
                             logger.info("Live audio client disconnected (code %s)", msg.get("code"))
                             break
                         if "bytes" in msg and msg["bytes"]:
+                            if len(msg["bytes"]) > MAX_LIVE_FRAME_BYTES:
+                                logger.warning("Live audio frame of %d bytes refused", len(msg["bytes"]))
+                                await client_ws.close(code=1009)  # message too big
+                                break
                             if capture is not None:
                                 capture.write(msg["bytes"])
                             for frame_1024 in pacer.push_bytes(msg["bytes"]):
                                 await prisma_ws.send(frame_1024)
                         elif "text" in msg and msg["text"]:
-                            ctrl = json.loads(msg["text"])
-                            if ctrl.get("action") == "commit_now":
+                            try:
+                                ctrl = json.loads(msg["text"])
+                            except ValueError:
+                                logger.warning("Ignored a malformed live-audio control message")
+                                continue
+                            if isinstance(ctrl, dict) and ctrl.get("action") == "commit_now":
                                 await assembler.flush_immediately()
                 except WebSocketDisconnect as exc:
                     logger.info("Live audio client disconnected (code %s)", exc.code)

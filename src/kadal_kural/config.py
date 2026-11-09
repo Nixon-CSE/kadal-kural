@@ -174,6 +174,17 @@ class AppSettings(BaseSettings):
     # Turn off only behind a proxy that does its own authentication (see api/edge.py).
     public_edge_guard: bool = Field(default=True)
 
+    # Local browser protection (api/security.py). Host names, besides localhost, that may serve the
+    # desk directly, comma-separated (e.g. a LAN address); anything else is refused (DNS rebinding).
+    allowed_hosts: str = Field(default="")
+    # Phone channel abuse limit per caller address, requests per minute (0 disables).
+    phone_rate_limit_per_minute: int = Field(default=60, ge=0)
+    # Request size limits.
+    max_phone_body_bytes: int = Field(default=32 * 1024, gt=0)
+    max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
+    # A live microphone session is closed after this long, bounding Gnani credit spend.
+    live_session_max_seconds: int = Field(default=20 * 60, gt=0)
+
     # Standard UPI Settlement Configuration
     merchant_upi_vpa: str = Field(default="kadalkural.harbour@okaxis")
     merchant_name: str = Field(default="Kadal Kural Wholesale Dispatch")
