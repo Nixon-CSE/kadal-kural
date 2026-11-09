@@ -19,6 +19,7 @@ import logging
 import re
 import tempfile
 import time
+import uuid
 import wave
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -42,7 +43,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from websockets.exceptions import ConnectionClosed
 
-from kadal_kural.api.edge import PublicEdgeGuard
+from kadal_kural.api.edge import PublicEdgeGuard, log_safe
 from kadal_kural.api.security import (
     LocalOriginGuard,
     RequestSizeLimit,
@@ -380,8 +381,8 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         conversation_id = call_id
         phone_logger.info(
             "phone turn received: content_type=%s body_bytes=%d fields=%s from_headers=%s header_names=%s transcript=%s",
-            content_type or "-", len(raw), sorted(fields), sorted(header_fields),
-            sorted(k.lower() for k in request.headers if k.lower() not in _SECRET_HEADERS),
+            log_safe(content_type or "-", 100), len(raw), log_safe(sorted(fields)), log_safe(sorted(header_fields)),
+            log_safe(sorted(k.lower() for k in request.headers if k.lower() not in _SECRET_HEADERS), 400),
             "yes" if transcript else "MISSING",
         )
         if transcript is not None and len(transcript) > MAX_TRANSCRIPT_CHARS:
@@ -397,7 +398,9 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         )
         statuses = [d.status.value for d in turn.evaluation.decisions]
         booked = {LedgerEventStatus.BOOKED.value, LedgerEventStatus.BOOKED_AFTER_BARGE_IN.value}
-        phone_logger.info("phone turn decided: conversation=%s statuses=%s", conversation_id or "-", ",".join(statuses) or "none")
+        phone_logger.info(
+            "phone turn decided: conversation=%s statuses=%s", log_safe(conversation_id or "-"), ",".join(statuses) or "none"
+        )
         return PhoneTurnResponse(
             reply_text=phone_reply_text(turn),
             booked_count=sum(s in booked for s in statuses),
@@ -421,7 +424,8 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                 sampwidth = wf.getsampwidth()
                 pcm_bytes = wf.readframes(wf.getnframes())
         except wave.Error as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid WAV file: {exc}") from exc
+            logger.info("Rejected an upload that is not a readable WAV file: %s", exc)
+            raise HTTPException(status_code=400, detail="Not a readable WAV file") from exc
 
         if channels != 1 or sampwidth != 2 or sample_rate not in (8000, 16000):
             raise HTTPException(
@@ -448,7 +452,10 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                 enable_boosting=True,
             )
         except GnaniConfigurationError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            logger.warning("Upload refused, speech service not configured: %s", exc)
+            raise HTTPException(
+                status_code=400, detail="Speech service is not configured: set KADAL_GNANI_API_KEY and restart"
+            ) from exc
 
         merged_transcript = " ".join(segments)
         mean_lat = round(sum(latencies) / max(1, len(latencies)), 1)
@@ -619,9 +626,12 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                     await asyncio.gather(prisma_recv_task, return_exceptions=True)
                     await assembler.close()
         except Exception as exc:
-            logger.exception("Live audio WebSocket error: %s", exc)
-            try:
-                await client_ws.send_json({"type": "error", "message": str(exc)})
+            error_id = uuid.uuid4().hex[:8]
+            logger.exception("Live audio WebSocket error %s: %s", error_id, exc)
+            try:  # details stay in the server log; the browser gets a reference to find them
+                await client_ws.send_json(
+                    {"type": "error", "message": f"The live session failed (error {error_id}). Press the microphone to retry."}
+                )
             except Exception as send_exc:  # noqa: BLE001 - best-effort report on a dying socket
                 logger.debug("Could not report the error to the client: %s", send_exc)
         finally:

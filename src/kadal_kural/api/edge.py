@@ -26,6 +26,13 @@ PROXY_HEADERS: FrozenSet[bytes] = frozenset({b"cf-connecting-ip", b"x-forwarded-
 PUBLIC_PATHS: FrozenSet[str] = frozenset({"/api/v1/phone-turn", "/healthz"})
 
 
+def log_safe(value: object, limit: int = 200) -> str:
+    """Request-controlled text made safe for a log line: control characters escaped, length capped,
+    so a crafted path, header or field name cannot forge or split log entries."""
+    text = str(value)[:limit]
+    return "".join(ch if ch.isprintable() else ch.encode("unicode_escape").decode("ascii") for ch in text)
+
+
 def is_proxied(scope: Scope) -> bool:
     return any(name.lower() in PROXY_HEADERS for name, _ in scope.get("headers", []))
 
@@ -45,7 +52,7 @@ class PublicEdgeGuard:
         if path in self.public_paths:
             await self.app(scope, receive, send)
             return
-        logger.warning("Blocked proxied %s request to %s", scope["type"], path)
+        logger.warning("Blocked proxied %s request to %s", scope["type"], log_safe(path))
         if scope["type"] == "websocket":
             await send({"type": "websocket.close", "code": 1008})
             return

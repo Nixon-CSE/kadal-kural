@@ -29,7 +29,7 @@ from urllib.parse import urlsplit
 
 from starlette.exceptions import HTTPException
 
-from kadal_kural.api.edge import ASGIApp, Message, Receive, Scope, Send, is_proxied
+from kadal_kural.api.edge import ASGIApp, Message, Receive, Scope, Send, is_proxied, log_safe
 
 logger = logging.getLogger(__name__)
 
@@ -134,12 +134,12 @@ class LocalOriginGuard:
             return
         host = _header(scope, b"host") or ""
         if _host_name(host) not in self.hosts:
-            logger.warning("Refused request for unexpected host %r (possible DNS rebinding)", host[:100])
+            logger.warning("Refused request for unexpected host %s (possible DNS rebinding)", log_safe(host, 100))
             await _refuse(scope, send, 421, "Unknown host. Add it to KADAL_ALLOWED_HOSTS to serve it.")
             return
         method = "WEBSOCKET" if scope["type"] == "websocket" else str(scope.get("method", "GET")).upper()
         if method not in SAFE_METHODS and scope.get("path") not in CSRF_EXEMPT_PATHS and self._cross_site(scope, host):
-            logger.warning("Refused cross-site %s %s", method, scope.get("path"))
+            logger.warning("Refused cross-site %s %s", method, log_safe(scope.get("path", "")))
             await _refuse(scope, send, 403, "Cross-site request refused")
             return
         await self.app(scope, receive, send)

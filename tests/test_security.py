@@ -243,3 +243,30 @@ def test_session_time_limit_closes_the_socket(tmp_path: Path, monkeypatch: pytes
             ws.send_bytes(b"\0" * 1024)
             message = ws.receive_json()
             assert message["type"] == "error" and "time limit" in message["message"]
+
+
+# ---------- logs and error messages ----------
+
+def test_log_safe_escapes_control_characters_and_caps_length() -> None:
+    from kadal_kural.api.edge import log_safe
+
+    assert log_safe("/x\nFAKE LOG LINE\r") == "/x\\nFAKE LOG LINE\\r"
+    assert log_safe("குமரன்") == "குமரன்"  # printable Tamil is kept as is
+    assert len(log_safe("a" * 1000)) == 200
+
+
+def test_crafted_phone_field_names_cannot_split_the_log_line(client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="kadal_kural.phone")
+    client.post(
+        "/api/v1/phone-turn",
+        json={"transcript": ORDER, "x\nFORGED ENTRY": "1"},
+        headers={PHONE_TOKEN_HEADER: TOKEN},
+    )
+    phone_lines = [r.getMessage() for r in caplog.records if r.name == "kadal_kural.phone"]
+    assert phone_lines and all("\n" not in line for line in phone_lines)
+
+
+def test_upload_errors_do_not_echo_parser_internals(client: TestClient) -> None:
+    response = client.post("/api/v1/upload-wav", files={"file": ("x.wav", b"not a wav", "audio/wav")})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Not a readable WAV file"
