@@ -1,19 +1,37 @@
+# Weekly updates, one grouped PR per ecosystem. Major versions are left to deliberate upgrades
+# (they change APIs and fail CI by design); security fixes still arrive as their own PRs.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /
     schedule: { interval: weekly }
-    open-pull-requests-limit: 5
+    groups:
+      python: { patterns: ["*"], update-types: [minor, patch] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: npm
     directory: /web
     schedule: { interval: weekly }
-    open-pull-requests-limit: 5
     groups:
-      react: { patterns: ["react", "react-dom", "@types/react*"] }
-      three: { patterns: ["three", "@react-three/*", "@types/three"] }
+      web: { patterns: ["*"], update-types: [minor, patch] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ["*"] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

@@ -1,0 +1,14 @@
+name: Feature request
+description: An idea for the desk, the phone line or the ledger.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem at the desk
+      description: Who runs into it and when (for example, a trader at 4 AM, a buyer settling up).
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help

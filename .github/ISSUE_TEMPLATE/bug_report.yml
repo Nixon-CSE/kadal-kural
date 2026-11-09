@@ -1,0 +1,27 @@
+name: Bug report
+description: Something did the wrong thing, or a wrong amount reached the ledger.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you said or typed (the Tamil text from the ledger's Heard column), what the desk decided, and what you expected.
+    validations: { required: true }
+  - type: dropdown
+    id: channel
+    attributes:
+      label: How the order arrived
+      options: [Desk microphone, Typed, Phone call, Uploaded audio, Not an order]
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server log lines
+      description: The matching PHONE or timing lines, if any. Remove tokens and API keys first.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Commit
+      description: Output of `git rev-parse --short HEAD`.
