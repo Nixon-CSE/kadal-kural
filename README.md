@@ -147,4 +147,4 @@ Stated in full in [REPORT.md](benchmark/REPORT.md#known-limitations):
 - Speaker and noise are synthetic (Timbre voice, spectrally shaped noise), not field recordings, and the catalog has 2 buyers and 2 SKUs.
 - A quantity digit error that stays inside its band (50 → 5 kg) is not caught before booking. The spoken read-back and voice undo mitigate it.
 - τ = 0.82 holds 39 trades that τ = 0.5 books correctly, mostly product-name mishearings. It costs repeats, never wrong bookings.
-- The phone channel uses Agent Builder's speech recognition, not the benchmarked Prisma stream. See [docs/phone_channel.md](docs/phone_channel.md).
+- The phone channel (verified on a live call: a half-heard order was held, the full one booked ₹10,000) uses Agent Builder's speech recognition and LLM to supply the words, not the benchmarked Prisma stream; the firewall still makes every decision. See [docs/phone_channel.md](docs/phone_channel.md).
