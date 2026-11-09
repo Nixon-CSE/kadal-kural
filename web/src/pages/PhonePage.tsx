@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { Fragment } from "react";
 
 import { useDeskContext } from "@/app/desk-context";
+import { CallLog } from "@/components/desk/CallLog";
 import { TiltCard } from "@/components/desk/TiltCard";
 import { KIND_CLASSES } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -68,9 +69,11 @@ export default function PhonePage() {
         ))}
       </section>
 
+      <CallLog />
+
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2">
         <section className="surface rounded-3xl p-6" aria-labelledby="call-title">
-          <h2 id="call-title" className="text-lg font-extrabold">Verified on a live call</h2>
+          <h2 id="call-title" className="text-lg font-extrabold">First live call</h2>
           <p className="mt-1 text-sm text-muted-foreground">9 Nov 2026. The caller said “குமரனுக்கு 20 கிலோ டைகர் பிரான் 500 ரேட்டு”. The agent fired twice.</p>
           <ol className="mt-4 grid gap-3">
             {CALL.map((c, i) => (

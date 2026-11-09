@@ -13,8 +13,10 @@ export interface Buyer {
   tamil_speak_name: string;
   credit_limit_inr: number;
   running_balance_inr: number;
-  phone_e164: string;
 }
+
+/** How an order reached the desk (OrderChannel on the server). Null on entries from before channels. */
+export type Channel = "voice" | "typed" | "phone" | "file";
 
 export interface LedgerEvent {
   event_id: number;
@@ -40,6 +42,11 @@ export interface LedgerEvent {
   buyer_guess_confidence: number | null;
   sku_guess: string | null;
   sku_guess_confidence: number | null;
+  channel: Channel | null;
+  /** The phone call this entry belongs to, when the agent sent an id. */
+  call_id: string | null;
+  /** ISO 8601 UTC; created_at holds only the time of day. */
+  recorded_at: string | null;
 }
 
 export interface Snapshot {
@@ -76,6 +83,41 @@ export interface Decision {
   audio_wav_b64?: string;
 }
 
+/** One phone-channel ledger entry inside a call. */
+export interface CallTurn {
+  event_id: number;
+  recorded_at: string | null;
+  created_at: string;
+  raw_utterance: string;
+  status: Status;
+  buyer_id: string;
+  buyer_name: string;
+  sku_name: string;
+  quantity: number;
+  unit: string;
+  rate_inr: number;
+  trade_value_inr: number;
+  voided: boolean;
+}
+
+export interface PhoneCall {
+  key: string;
+  call_id: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  turns: CallTurn[];
+  counts: { booked: number; held: number; asked_again: number; undone: number };
+  booked_value_inr: number;
+}
+
+/** /api/v1/calls: the phone line's call log, newest call first. */
+export interface CallLog {
+  phone_channel_enabled: boolean;
+  gap_seconds: number;
+  summary: { calls: number; entries: number; booked_value_inr: number };
+  calls: PhoneCall[];
+}
+
 export interface TurnResult {
   decisions: Decision[];
   snapshot: Snapshot;
@@ -95,6 +137,7 @@ export const api = {
       body: JSON.stringify({ transcript, synthesize_tts: true }),
     }).then((r) => json<TurnResult>(r)),
   reset: () => fetch("/api/v1/reset", { method: "POST" }).then((r) => json<{ snapshot: Snapshot }>(r)),
+  calls: (limit = 20) => fetch(`/api/v1/calls?limit=${limit}`).then((r) => json<CallLog>(r)),
 };
 
 /** Messages the live-audio socket sends. */

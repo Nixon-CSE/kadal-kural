@@ -1,12 +1,15 @@
-import { Calculator } from "lucide-react";
+import { Calculator, Phone } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Link } from "react-router";
 
 import { useDeskContext } from "@/app/desk-context";
 import CountUp from "@/components/CountUp";
+import { ChannelBadge } from "@/components/desk/ChannelBadge";
 import { Dial } from "@/components/desk/CreditGauges";
 import { TiltCard } from "@/components/desk/TiltCard";
 import { Slider } from "@/components/ui/slider";
+import { usePhoneCalls } from "@/hooks/usePhoneCalls";
 import type { Buyer, LedgerEvent } from "@/lib/api";
 import { inr, KIND_CLASSES, statusOf } from "@/lib/format";
 import { tally } from "@/lib/ledger";
@@ -56,7 +59,7 @@ function WhatIf({ buyer }: { buyer: Buyer }) {
   );
 }
 
-function BuyerCard({ buyer, events, index }: { buyer: Buyer; events: LedgerEvent[]; index: number }) {
+function BuyerCard({ buyer, events, index, phoneOrders }: { buyer: Buyer; events: LedgerEvent[]; index: number; phoneOrders: number | null }) {
   const mine = events.filter((e) => e.buyer_id === buyer.buyer_id);
   const t = tally(mine);
   const used = buyer.credit_limit_inr ? buyer.running_balance_inr / buyer.credit_limit_inr : 1;
@@ -72,6 +75,16 @@ function BuyerCard({ buyer, events, index }: { buyer: Buyer; events: LedgerEvent
               <h2 className="truncate text-2xl font-extrabold">{buyer.canonical_name}</h2>
               <p lang="ta" className="tamil text-muted-foreground">{buyer.tamil_speak_name}</p>
             </div>
+            {phoneOrders !== null && (
+              <Link
+                to="/phone"
+                className={cn("inline-flex h-10 shrink-0 items-center gap-2 rounded-full px-4 text-sm font-semibold", phoneOrders > 0 ? "ink-key" : "surface text-muted-foreground hover:border-lime")}
+                title="Orders this buyer placed through the Gnani phone agent"
+              >
+                <Phone className={cn("size-4", phoneOrders > 0 && "text-lime")} aria-hidden />
+                {phoneOrders > 0 ? `${phoneOrders} by phone` : "No phone orders"}
+              </Link>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-6">
@@ -102,6 +115,7 @@ function BuyerCard({ buyer, events, index }: { buyer: Buyer; events: LedgerEvent
                   return (
                     <li key={e.event_id} className={cn("flex items-center gap-3 rounded-xl px-3 py-2 text-sm", t.voided.has(e.event_id) ? "opacity-50 line-through" : "bg-white/70")}>
                       <span className="text-muted-foreground">{e.created_at}</span>
+                      <ChannelBadge channel={e.channel} compact />
                       <span className="min-w-0 flex-1 truncate">{e.quantity} {e.unit} {e.sku_name}</span>
                       <b>{inr(e.trade_value_inr)}</b>
                       <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold", KIND_CLASSES[st.kind].chip)}>{st.label}</span>
@@ -121,11 +135,25 @@ export default function BuyersPage() {
   const desk = useDeskContext();
   const buyers = desk.desk?.buyers ?? [];
   const events = desk.desk?.events ?? [];
+  const phoneOn = !!desk.desk?.phone_channel_enabled;
+  const { log } = usePhoneCalls(100, phoneOn);
+  // Orders each buyer placed through the phone agent, over the whole call log (not just recent entries).
+  const phoneOrders = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const call of log?.calls ?? []) {
+      for (const t of call.turns) {
+        if (t.status !== "VOIDED_BY_UNDO") counts.set(t.buyer_id, (counts.get(t.buyer_id) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [log]);
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
       <PageHeading title="Buyers" lead="Credit exposure for each account, with their recent orders and a what-if check before you quote a big order." />
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2">
-        {buyers.map((b, i) => <BuyerCard key={b.buyer_id} buyer={b} events={events} index={i} />)}
+        {buyers.map((b, i) => (
+          <BuyerCard key={b.buyer_id} buyer={b} events={events} index={i} phoneOrders={phoneOn && log ? phoneOrders.get(b.buyer_id) ?? 0 : null} />
+        ))}
       </div>
     </div>
   );

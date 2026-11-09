@@ -4,6 +4,7 @@ import { lazy, Suspense } from "react";
 import { Link, useNavigate } from "react-router";
 
 import { useDeskContext } from "@/app/desk-context";
+import { ChannelBadge } from "@/components/desk/ChannelBadge";
 import { inr, KIND_CLASSES, statusOf, TRY_ORDERS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { loadHeroScene } from "@/pages/loaders";
@@ -134,8 +135,8 @@ export default function HomePage() {
               const st = statusOf(e.status);
               return (
                 <li key={e.event_id}>
-                  <Link to="/ledger" className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 hover:bg-lime-soft/50 sm:grid-cols-[5rem_minmax(0,1fr)_10rem_7rem_8rem] sm:px-6">
-                    <span className="text-sm text-muted-foreground tabular-nums">{e.created_at.slice(-8, -3) || e.created_at}</span>
+                  <Link to="/ledger" className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 hover:bg-lime-soft/50 sm:grid-cols-[6.5rem_minmax(0,1fr)_10rem_7rem_8rem] sm:px-6">
+                    <span className="flex items-center gap-2 text-sm text-muted-foreground tabular-nums">{e.created_at.slice(-8, -3) || e.created_at}<ChannelBadge channel={e.channel} compact /></span>
                     <span lang="ta" className="tamil truncate font-semibold">{e.raw_utterance}</span>
                     <span className="hidden truncate text-sm text-muted-foreground sm:block">{e.buyer_name}</span>
                     <span className="hidden text-right font-semibold tabular-nums sm:block">{inr(e.trade_value_inr)}</span>

@@ -8,11 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import type { Buyer, LedgerEvent } from "@/lib/api";
+import type { Buyer, Channel, LedgerEvent } from "@/lib/api";
+import { CHANNEL_ORDER, CHANNELS, callTime } from "@/lib/channel";
 import { inr, KIND_CLASSES, pct, statusOf, type Kind } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { tally } from "@/lib/ledger";
+
+import { ChannelBadge } from "./ChannelBadge";
 
 type Filter = "all" | Kind;
 const FILTERS: { value: Filter; label: string }[] = [
@@ -63,6 +66,7 @@ interface LedgerProps {
 export function Ledger({ events, gate, newIds, limit, full, buyers = [] }: LedgerProps) {
   const [query, setQuery] = useState("");
   const [buyer, setBuyer] = useState<string>("all");
+  const [channel, setChannel] = useState<Channel | "all">("all");
   const [filter, setFilter] = useState<Filter>("all");
   const [open, setOpen] = useState<LedgerEvent | null>(null);
   const { voided } = tally(events);
@@ -78,10 +82,12 @@ export function Ledger({ events, gate, newIds, limit, full, buyers = [] }: Ledge
     return events.filter((e) => {
       if (filter !== "all" && statusOf(e.status).kind !== filter) return false;
       if (buyer !== "all" && e.buyer_id !== buyer) return false;
+      if (channel !== "all" && e.channel !== channel) return false;
       if (!q) return true;
       return [e.raw_utterance, e.buyer_name, e.sku_name, statusOf(e.status).label].some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [events, filter, query, buyer]);
+  }, [events, filter, query, buyer, channel]);
+  const channels = useMemo(() => CHANNEL_ORDER.filter((c) => events.some((e) => e.channel === c)), [events]);
   const shown = limit ? rows.slice(0, limit) : rows;
 
   return (
@@ -120,6 +126,25 @@ export function Ledger({ events, gate, newIds, limit, full, buyers = [] }: Ledge
           ))}
         </div>
       )}
+      {full && channels.length > 1 && (
+        <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filter by how the order arrived">
+          {(["all", ...channels] as const).map((c) => {
+            const Icon = c === "all" ? null : CHANNELS[c].icon;
+            return (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setChannel(c)}
+                aria-pressed={channel === c}
+                className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-semibold transition-colors pointer-coarse:py-2", channel === c ? "border-lime bg-lime-soft" : "bg-white hover:border-lime")}
+              >
+                {Icon && <Icon className="size-3.5" aria-hidden />}
+                {c === "all" ? "Every channel" : CHANNELS[c].label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <ul className="grid gap-2 md:hidden">
         {shown.map((e) => <EntryCard key={e.event_id} e={e} voided={voided.has(e.event_id)} fresh={newIds.has(e.event_id)} onOpen={() => setOpen(e)} />)}
@@ -128,7 +153,7 @@ export function Ledger({ events, gate, newIds, limit, full, buyers = [] }: Ledge
         <Table className="min-w-[900px]">
           <TableHeader>
             <TableRow>
-              <TableHead>Time</TableHead><TableHead>Heard</TableHead><TableHead>Buyer</TableHead><TableHead>Item</TableHead>
+              <TableHead>Time</TableHead><TableHead className="w-10"><span className="sr-only">Channel</span></TableHead><TableHead>Heard</TableHead><TableHead>Buyer</TableHead><TableHead>Item</TableHead>
               <TableHead className="text-right">Qty × rate</TableHead><TableHead className="text-right">Value</TableHead>
               <TableHead>Decision</TableHead><TableHead>Confidence</TableHead><TableHead>Payment</TableHead><TableHead className="w-6" />
             </TableRow>
@@ -149,6 +174,7 @@ export function Ledger({ events, gate, newIds, limit, full, buyers = [] }: Ledge
                   className="cursor-pointer border-b transition-colors hover:bg-lime-soft/60 focus-visible:bg-lime-soft"
                 >
                   <TableCell className={cn(isVoided && "line-through opacity-60")}>{e.created_at}</TableCell>
+                  <TableCell><ChannelBadge channel={e.channel} compact /></TableCell>
                   <TableCell lang="ta" title={e.raw_utterance} className={cn("tamil max-w-[260px] truncate", isVoided && "line-through opacity-60")}>{e.raw_utterance}</TableCell>
                   <TableCell className={cn(isVoided && "line-through opacity-60")}>{e.buyer_name}</TableCell>
                   <TableCell className={cn(isVoided && "line-through opacity-60")}>{e.sku_name}</TableCell>
@@ -193,6 +219,7 @@ function EntryCard({ e, voided, fresh, onOpen }: { e: LedgerEvent; voided: boole
       <button type="button" onClick={onOpen} className="grid w-full gap-1.5 p-3.5 text-left active:bg-lime-soft/60">
         <span className="flex items-center gap-2">
           <StatusChip status={e.status} />
+          <ChannelBadge channel={e.channel} />
           {voided && <span className="text-xs font-semibold text-muted-foreground">undone</span>}
           <span className="ml-auto text-xs text-muted-foreground">{e.created_at}</span>
           <ChevronRight className="size-4 text-muted-foreground" />
@@ -218,7 +245,7 @@ function EntrySheet({ entry, voided, gate, onClose }: { entry: LedgerEvent | nul
           <>
             <SheetHeader>
               <SheetTitle className="flex items-center gap-2 text-xl">Entry #{entry.event_id} <StatusChip status={entry.status} /></SheetTitle>
-              <SheetDescription>Recorded at {entry.created_at}{voided && " · later undone"}</SheetDescription>
+              <SheetDescription>Recorded at {callTime(entry.recorded_at, entry.created_at)}{voided && ", later undone"}</SheetDescription>
             </SheetHeader>
             <div className="grid gap-5 px-4 pb-6">
               <div className="rounded-2xl bg-secondary p-4">
@@ -240,6 +267,9 @@ function EntrySheet({ entry, voided, gate, onClose }: { entry: LedgerEvent | nul
                 <Item k="Confidence" v={pct(entry.confidence)} sub={`gate ${pct(gate)}`} />
                 <Item k="Balance before" v={inr(entry.previous_balance_inr)} />
                 <Item k="Balance after" v={inr(entry.projected_balance_inr)} sub={`limit ${inr(entry.credit_limit_inr)}`} />
+                {entry.channel && (
+                  <Item k="Arrived by" v={CHANNELS[entry.channel].label} sub={entry.channel === "phone" ? (entry.call_id ? `call ${entry.call_id}` : "Gnani Agent Builder") : undefined} />
+                )}
               </dl>
               {showUpi ? (
                 <div className="surface flex flex-col items-center gap-3 rounded-2xl p-5 text-center">

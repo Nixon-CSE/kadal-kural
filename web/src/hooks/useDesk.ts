@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { api, type Decision, type DeskState, type LiveMessage, type Snapshot } from "@/lib/api";
-import { statusOf, type Kind } from "@/lib/format";
+import { inr, statusOf, type Kind } from "@/lib/format";
 
 export type Mode = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error";
 
@@ -21,6 +21,8 @@ export interface Turn {
 export type Stage = 0 | 1 | 2 | 3 | 4 | 5;
 
 const MIC_RATE = Number(document.body.dataset.micRate) || 8000;
+/** How often the desk checks for orders placed by phone (the agent calls the server, not this page). */
+const PHONE_POLL_MS = 4000;
 
 export function useDesk() {
   const [desk, setDesk] = useState<DeskState | null>(null);
@@ -69,6 +71,39 @@ export function useDesk() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  /* ---------- phone line: orders placed through the Gnani agent appear without a reload ---------- */
+  const phoneOn = !!desk?.phone_channel_enabled;
+  useEffect(() => {
+    if (!phoneOn) return;
+    let stopped = false;
+    let inFlight = false;
+    const tick = async () => {
+      if (inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        const state = await api.state();
+        if (stopped) return;
+        const fresh = state.events.filter((e) => e.event_id > lastEventId.current);
+        // Only phone entries are applied here: the desk's own turns land through their own response,
+        // and applying them early would steal their highlight.
+        const phone = fresh.filter((e) => e.channel === "phone");
+        if (!phone.length) return;
+        applySnapshot(state);
+        for (const e of [...phone].reverse()) {
+          const st = statusOf(e.status);
+          const what = st.kind === "undone" ? "Last booking undone" : `${e.buyer_name}, ${inr(e.trade_value_inr)}`;
+          toast.message(`Phone order: ${st.label}`, { description: `${what} · “${e.raw_utterance}”` });
+        }
+      } catch {
+        /* the next tick retries; a server that stays down is reported by the next desk action */
+      } finally {
+        inFlight = false;
+      }
+    };
+    const id = window.setInterval(() => void tick(), PHONE_POLL_MS);
+    return () => { stopped = true; window.clearInterval(id); };
+  }, [phoneOn, applySnapshot]);
 
   /* ---------- reply playback (stops the instant the trader talks) ---------- */
   const stopPlayback = useCallback(() => {
