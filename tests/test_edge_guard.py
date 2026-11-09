@@ -27,7 +27,7 @@ def client(tmp_path: Path) -> Any:
 @pytest.mark.parametrize(
     "method,path",
     [("GET", "/"), ("GET", "/api/v1/state"), ("POST", "/api/v1/reset"), ("POST", "/api/v1/ingest"),
-     ("GET", "/static/app.js"), ("GET", "/docs")],
+     ("GET", "/static/app.js"), ("GET", "/docs"), ("GET", "/api/v1/calls")],
 )
 def test_proxied_requests_cannot_reach_private_routes(client: TestClient, method: str, path: str) -> None:
     response = client.request(method, path, headers=CLOUDFLARE, json=ORDER)

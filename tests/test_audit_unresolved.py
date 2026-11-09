@@ -84,5 +84,9 @@ def test_hold_for_another_reason_keeps_confident_names(client: TestClient) -> No
 
 def test_ledger_has_a_truncated_heard_column_with_tooltip() -> None:
     ledger = (Path(__file__).resolve().parents[1] / "web/src/components/desk/Ledger.tsx").read_text(encoding="utf-8")
-    assert "<TableHead>Time</TableHead><TableHead>Heard</TableHead><TableHead>Buyer</TableHead>" in ledger
+    # Time, then how the order arrived (desk, phone, …), then exactly what was heard, then the buyer.
+    assert (
+        '<TableHead>Time</TableHead><TableHead className="w-10"><span className="sr-only">Channel</span></TableHead>'
+        "<TableHead>Heard</TableHead><TableHead>Buyer</TableHead>"
+    ) in ledger
     assert "title={e.raw_utterance}" in ledger and "truncate" in ledger
