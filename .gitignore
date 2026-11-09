@@ -30,3 +30,6 @@ mic_captures/
 
 # Benchmark transcript/audio cache (regenerable)
 benchmark/.cache/
+
+# demo video workspace (large media)
+demo_video/
