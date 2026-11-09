@@ -21,7 +21,7 @@ import time
 import wave
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Mapping, Optional
+from typing import Any, AsyncIterator, Dict, Iterable, List, Mapping, Optional, Tuple
 from urllib.parse import parse_qs
 
 import websockets
@@ -149,6 +149,26 @@ def parse_phone_fields(content_type: str, raw_body: bytes, query: Mapping[str, s
     return fields
 
 
+_SECRET_HEADERS = frozenset({PHONE_TOKEN_HEADER.lower(), "authorization", "cookie"})
+
+
+def phone_header_fields(headers: Iterable[Tuple[str, str]]) -> Dict[str, str]:
+    """
+    Transcript fields sent as HTTP headers (``transcript``, ``user_text``, ``text``, or with an
+    ``x-`` prefix). Header values reach us as latin-1; UTF-8 text (Tamil) is restored from it.
+    """
+    found: Dict[str, str] = {}
+    for name, value in headers:
+        key = name.lower()
+        key = key[2:] if key.startswith("x-") else key
+        if key in PHONE_TRANSCRIPT_KEYS and key not in found:
+            try:
+                found[key] = value.encode("latin-1").decode("utf-8")
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                found[key] = value
+    return found
+
+
 def phone_transcript(fields: Mapping[str, str]) -> Optional[str]:
     """The caller's words, or None when absent, too short, or an unfilled ``{{placeholder}}``."""
     for key in PHONE_TRANSCRIPT_KEYS:
@@ -268,11 +288,16 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             fields.update({k: v for k, v in request.query_params.items() if k not in fields})
         else:
             fields = parse_phone_fields(content_type, raw, request.query_params)
+        header_fields = phone_header_fields(request.headers.items())
+        for key, value in header_fields.items():
+            fields.setdefault(key, value)  # a console that puts the field under Headers still works
         transcript = phone_transcript(fields)
         conversation_id = (fields.get("conversation_id") or "")[:128] or None
         phone_logger.info(
-            "phone turn received: content_type=%s body_bytes=%d fields=%s transcript=%s",
-            content_type or "-", len(raw), sorted(fields), "yes" if transcript else "MISSING",
+            "phone turn received: content_type=%s body_bytes=%d fields=%s from_headers=%s header_names=%s transcript=%s",
+            content_type or "-", len(raw), sorted(fields), sorted(header_fields),
+            sorted(k.lower() for k in request.headers if k.lower() not in _SECRET_HEADERS),
+            "yes" if transcript else "MISSING",
         )
         if transcript is None:
             return PhoneTurnResponse(

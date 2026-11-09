@@ -170,3 +170,29 @@ def test_json_body_without_content_type_is_accepted(client: TestClient) -> None:
 )
 def test_parse_phone_fields(content_type: str, raw: bytes, query: Dict[str, str], expected: Dict[str, str]) -> None:
     assert parse_phone_fields(content_type, raw, query) == expected
+
+
+def test_transcript_sent_as_a_header_is_accepted(client: TestClient) -> None:
+    """A console that puts the field under Headers instead of Body (UTF-8 Tamil in a header)."""
+    response = client.post(
+        "/api/v1/phone-turn",
+        headers=[(PHONE_TOKEN_HEADER.encode(), TOKEN.encode()), (b"transcript", BOOKABLE.encode("utf-8"))],
+        json={},
+    )
+    assert response.status_code == 200 and response.json()["booked_count"] == 1
+
+
+def test_body_wins_over_header(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/phone-turn",
+        headers=[(PHONE_TOKEN_HEADER.encode(), TOKEN.encode()), (b"x-transcript", b"garbage words")],
+        json={"transcript": BOOKABLE},
+    )
+    assert response.json()["booked_count"] == 1
+
+
+def test_phone_header_fields_never_include_secrets() -> None:
+    from kadal_kural.api.main import phone_header_fields
+
+    found = phone_header_fields([("X-Kadal-Token", "secret"), ("Authorization", "Bearer s"), ("X-Text", "hi")])
+    assert found == {"text": "hi"}
