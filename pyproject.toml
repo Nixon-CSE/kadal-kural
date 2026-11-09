@@ -35,7 +35,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-kadal_kural = ["data/*.json"]
+kadal_kural = ["data/*.json", "api/static/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]

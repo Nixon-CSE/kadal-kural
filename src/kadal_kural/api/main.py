@@ -4,6 +4,8 @@ Exposes:
 - Full-duplex WebSocket (/ws/live-audio) bridging Browser WebAudio 8kHz PCM <-> Gnani Prisma v2.5 & Timbre v2.5
 - Real WAV file streaming endpoint (/api/v1/upload-wav)
 - REST state & deterministic ingest endpoints (/api/v1/state, /api/v1/ingest)
+- Phone channel for Gnani Agent Builder (/api/v1/phone-turn)
+- Desk UI (/ and /static: index.html, app.css, app.js)
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 import websockets
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from websockets.exceptions import ConnectionClosed
 
@@ -55,6 +58,8 @@ from kadal_kural.infrastructure.persistence import AppendOnlyLedgerRepository
 from kadal_kural.infrastructure.voice_turn import VoiceTurn, run_voice_turn
 
 logger = logging.getLogger(__name__)
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def _enable_timing_log() -> None:
@@ -168,6 +173,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             "domain_title": matcher.domain_title,
             "confidence_threshold": cfg.confidence_threshold,
             "gnani_live_key_configured": has_key,
+            "phone_channel_enabled": bool(cfg.phone_webhook_token),
             **repo.fetch_dashboard_snapshot(),
         }
 
@@ -436,281 +442,14 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         firewall.held_context = None
         return {"status": "reset", "snapshot": repo.fetch_dashboard_snapshot()}
 
+    index_html = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace(
+        "__MIC_RATE__", str(LIVE_MIC_SAMPLE_RATE)
+    )
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
-        return """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Kadal Kural (கடல் குரல்) — B2B Pre-Dispatch Credit Firewall</title>
-  <style>
-    body { font-family: system-ui, -apple-system, sans-serif; background: #090d16; color: #f8fafc; margin: 0; padding: 24px; }
-    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e293b; padding-bottom: 16px; margin-bottom: 20px; }
-    .badge { background: #0f172a; border: 1px solid #38bdf8; color: #38bdf8; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 12px; }
-    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 20px; }
-    .card { background: #111827; border: 1px solid #1f2937; border-radius: 10px; padding: 18px; }
-    .btn { background: #2563eb; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; margin-right: 8px; margin-bottom: 8px; }
-    .btn-mic { background: #16a34a; font-size: 15px; }
-    .btn-mic.recording { background: #dc2626; animation: pulse 1.2s infinite; }
-    .btn-warn { background: #d97706; }
-    .btn-muted { background: #475569; }
-    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.65; } 100% { opacity: 1; } }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
-    th, td { text-align: left; padding: 10px; border-bottom: 1px solid #1f2937; }
-    .BOOKED, .BOOKED_AFTER_BARGE_IN { color: #4ade80; font-weight: 700; }
-    .CREDIT_HOLD_BREACH { color: #f87171; font-weight: 700; }
-    .PENDING_CLARIFICATION { color: #facc15; font-weight: 700; }
-    .VOIDED_BY_UNDO { color: #a78bfa; font-weight: 700; }
-    td.heard { max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #cbd5e1; }
-    .alert-box { background: #172554; border-left: 4px solid #38bdf8; padding: 14px; margin-bottom: 18px; border-radius: 6px; font-size: 14px; display: none; }
-    .stream-bar { background: #0f172a; border: 1px solid #334155; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; color: #94a3b8; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div>
-      <h1 style="margin:0; font-size:24px;">Kadal Kural (கடல் குரல்) · Pre-Dispatch Credit Firewall</h1>
-      <p style="margin:4px 0 0; color:#94a3b8; font-size:14px;">Live 8kHz 1,024-Byte Paced Streaming · Gnani Prisma v2.5 STT + Deterministic Engine + Timbre v2.5 TTS</p>
-    </div>
-    <span id="keyBadge" class="badge">CHECKING GNANI API KEY...</span>
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <button id="micBtn" class="btn btn-mic" onclick="toggleLiveMic()">🎙️ Start Live 8kHz Microphone Stream (Prisma v2.5 + Timbre v2.5)</button>
-    <button class="btn" onclick="runScreenshotTest()">▶ Replay Verified Transcript</button>
-    <button class="btn btn-warn" onclick="runBargeInOverride()">⚡ Barge-In ("செந்திலுக்கு 25 கிலோ மட்டும் போடு")</button>
-    <button class="btn btn-muted" onclick="runUndoTest()">↩ Voice Undo ("கடைசி ஆர்டர் கேன்சல்")</button>
-    <button class="btn btn-muted" onclick="resetDemo()">↺ Reset</button>
-  </div>
-
-  <div id="streamStatus" class="stream-bar">
-    <strong>Live Pipeline Telemetry:</strong> Idle. Click "Start Live 8kHz Microphone Stream" to open a live, frame-paced 1,024-byte PCM stream to Gnani Prisma v2.5.
-  </div>
-
-  <div id="ttsBanner" class="alert-box"></div>
-
-  <div class="grid">
-    <div class="card">
-      <h3 style="margin-top:0;">Buyer Credit Exposure</h3>
-      <div id="buyersList"></div>
-    </div>
-    <div class="card">
-      <h3 style="margin-top:0;">Append-Only Pre-Dispatch Audit Log</h3>
-      <table>
-        <thead>
-          <tr><th>Time</th><th>Heard</th><th>Buyer</th><th>SKU</th><th>Qty × Rate</th><th>Value</th><th>Status</th><th>Conf</th><th>UPI QR</th></tr>
-        </thead>
-        <tbody id="eventsTable"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <script>
-    let ws = null;
-    let audioCtx = null;
-    let processor = null;
-    let micStream = null;
-    let currentTtsAudio = null;
-    let ttsQueue = [];
-
-    async function refresh() {
-      const res = await fetch("/api/v1/state");
-      const data = await res.json();
-      const badge = document.getElementById("keyBadge");
-      if (data.gnani_live_key_configured) {
-        badge.textContent = "LIVE GNANI ARTHA KEY ACTIVE · τ = " + data.confidence_threshold;
-        badge.style.borderColor = "#4ade80";
-        badge.style.color = "#4ade80";
-      } else {
-        badge.textContent = "ADD KADAL_GNANI_API_KEY IN .ENV FOR LIVE AUDIO";
-        badge.style.borderColor = "#facc15";
-        badge.style.color = "#facc15";
-      }
-      renderState(data);
-    }
-
-    function stopCurrentTtsPlayback() {
-      ttsQueue = [];
-      if (currentTtsAudio) {
-        currentTtsAudio.onended = null;
-        currentTtsAudio.onerror = null;
-        currentTtsAudio.pause();
-        currentTtsAudio.currentTime = 0;
-        currentTtsAudio = null;
-      }
-    }
-
-    function playNextQueuedWav() {
-      const b64 = ttsQueue.shift();
-      if (!b64) {
-        currentTtsAudio = null;
-        return;
-      }
-      const audio = new Audio("data:audio/wav;base64," + b64);
-      currentTtsAudio = audio;
-      // Each decision carries its own Timbre reply; chain them so a two-trade turn speaks both.
-      audio.onended = () => { if (currentTtsAudio === audio) playNextQueuedWav(); };
-      audio.onerror = audio.onended;
-      audio.play().catch(err => {
-        console.warn("Audio play blocked:", err);
-        if (currentTtsAudio === audio) playNextQueuedWav();
-      });
-    }
-
-    function playDecisionReplies(decisions) {
-      stopCurrentTtsPlayback();
-      ttsQueue = decisions.map(d => d.audio_wav_b64).filter(Boolean);
-      playNextQueuedWav();
-    }
-
-    async function toggleLiveMic() {
-      const btn = document.getElementById("micBtn");
-      const statusEl = document.getElementById("streamStatus");
-      if (ws) {
-        ws.close();
-        ws = null;
-        if (processor) processor.disconnect();
-        if (audioCtx) audioCtx.close();
-        if (micStream) micStream.getTracks().forEach(t => t.stop());
-        btn.classList.remove("recording");
-        btn.textContent = "🎙️ Start Live 8kHz Microphone Stream (Prisma v2.5 + Timbre v2.5)";
-        statusEl.innerHTML = "<strong>Live Pipeline Telemetry:</strong> Stream closed.";
-        return;
-      }
-
-      const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(proto + "//" + location.host + "/ws/live-audio");
-      ws.binaryType = "arraybuffer";
-
-      ws.onmessage = (evt) => {
-        const msg = JSON.parse(evt.data);
-        if (msg.type === "error") {
-          statusEl.innerHTML = `<span style="color:#f87171;"><strong>Error:</strong> ${msg.message}</span>`;
-          toggleLiveMic();
-          return;
-        }
-        if (msg.type === "prisma_connected") {
-          statusEl.innerHTML = `<strong>Live Prisma v2.5 Session (${msg.session_id}):</strong> Streaming 8,000 Hz 16-bit mono PCM (1,024-byte frames)... Speak now in Tamil/Tanglish!`;
-        }
-        if (msg.type === "barge_in_and_segment") {
-          stopCurrentTtsPlayback();
-          statusEl.innerHTML = `<strong>VAD Segment (${msg.stt_latency_ms}ms):</strong> "${msg.segment_text}" <em>(assembling segments...)</em>`;
-        }
-        if (msg.type === "credit_decisions") {
-          const banner = document.getElementById("ttsBanner");
-          banner.style.display = "block";
-          banner.innerHTML = msg.decisions.map(r =>
-            `<div><strong>[${r.status}] (STT: ${msg.stt_latency_ms}ms | Timbre TTFB: ${r.timbre_ttfb_ms || 0}ms):</strong> ${r.tts_response_tamil}</div>`
-          ).join("<hr style='border-color:#1e3a8a'/>");
-          renderState(msg.snapshot);
-          playDecisionReplies(msg.decisions);
-        }
-      };
-
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, sampleRate: __MIC_RATE__, echoCancellation: true, noiseSuppression: false }
-      });
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: __MIC_RATE__ });
-      if (audioCtx.sampleRate !== __MIC_RATE__) {
-        // The server declares x-sample-rate=__MIC_RATE__; streaming any other rate would be mis-transcribed.
-        const actual = audioCtx.sampleRate;
-        await audioCtx.close();
-        micStream.getTracks().forEach(tr => tr.stop());
-        ws.close();
-        statusEl.textContent = `Browser mic runs at ${actual} Hz; this build requires __MIC_RATE__ Hz. Use Chrome.`;
-        return;
-      }
-      const source = audioCtx.createMediaStreamSource(micStream);
-      processor = audioCtx.createScriptProcessor(512, 1, 1);
-      processor.onaudioprocess = (e) => {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        const input = e.inputBuffer.getChannelData(0);
-        const pcm16 = new Int16Array(input.length);
-        for (let i = 0; i < input.length; i++) {
-          const s = Math.max(-1, Math.min(1, input[i]));
-          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
-        ws.send(pcm16.buffer);
-      };
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-      btn.classList.add("recording");
-      btn.textContent = "⏹ Stop Live Microphone Stream";
-    }
-
-    // The transcript is speech-to-text output; escape it before it lands in markup or an attribute.
-    function escapeHtml(text) {
-      return String(text ?? "").replace(/[&<>"']/g, ch => (
-        {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[ch]
-      ));
-    }
-
-    function renderState(data) {
-      document.getElementById("buyersList").innerHTML = data.buyers.map(b => {
-        const pct = Math.min(100, Math.round((b.running_balance_inr / b.credit_limit_inr) * 100));
-        const color = pct > 90 ? "#ef4444" : "#22c55e";
-        return `<div style="margin-bottom:16px;">
-          <div style="display:flex;justify-content:space-between;">
-            <strong>${b.canonical_name} (${b.tamil_speak_name})</strong>
-            <span>₹${b.running_balance_inr.toLocaleString("en-IN")} / ₹${b.credit_limit_inr.toLocaleString("en-IN")}</span>
-          </div>
-          <div style="background:#1f2937;height:10px;border-radius:5px;margin-top:6px;">
-            <div style="background:${color};width:${pct}%;height:10px;border-radius:5px;"></div>
-          </div>
-        </div>`;
-      }).join("");
-
-      document.getElementById("eventsTable").innerHTML = data.events.map(e => `
-        <tr>
-          <td>${e.created_at}</td>
-          <td class="heard" title="${escapeHtml(e.raw_utterance)}">${escapeHtml(e.raw_utterance)}</td>
-          <td>${e.buyer_name}</td>
-          <td>${e.sku_name}</td>
-          <td>${e.quantity} ${e.unit} × ₹${e.rate_inr}</td>
-          <td>₹${e.trade_value_inr.toLocaleString("en-IN")}</td>
-          <td class="${e.status}">${e.status}</td>
-          <td>${(e.confidence * 100).toFixed(0)}%</td>
-          <td>${e.upi_link_visible ? `<a href="${e.upi_payment_uri}" style="color:#38bdf8;">UPI Link</a>` : "-"}</td>
-        </tr>
-      `).join("");
-    }
-
-    async function sendTranscript(text) {
-      stopCurrentTtsPlayback();
-      const res = await fetch("/api/v1/ingest", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({transcript: text, synthesize_tts: true})
-      });
-      const out = await res.json();
-      const banner = document.getElementById("ttsBanner");
-      banner.style.display = "block";
-      banner.innerHTML = out.decisions.map(r =>
-        `<div><strong>[${r.status}] (Timbre TTFB: ${r.timbre_ttfb_ms || 0}ms):</strong> ${r.tts_response_tamil}</div>`
-      ).join("<hr style='border-color:#1e3a8a'/>");
-      renderState(out.snapshot);
-      playDecisionReplies(out.decisions);
-    }
-
-    function runScreenshotTest() {
-      sendTranscript("செந்தில் சீஃபுட்ஸ்க்கு 40 கிலோ எக்ஸ்போர்ட் வஞ்சரம் எழுநூற்றி 40 ரேட்டு குமரனுக்கு 60 கிலோ டைகர் ஃப்ராண்ட் ஐநூற்றி 60 ரேட்டு கிரெடிட்டில் ஏற்று");
-    }
-    function runBargeInOverride() {
-      sendTranscript("செந்திலுக்கு 25 கிலோ மட்டும் போடு");
-    }
-    function runUndoTest() {
-      sendTranscript("கடைசி ஆர்டர் கேன்சல்");
-    }
-    async function resetDemo() {
-      stopCurrentTtsPlayback();
-      await fetch("/api/v1/reset", {method: "POST"});
-      document.getElementById("ttsBanner").style.display = "none";
-      refresh();
-    }
-    refresh();
-  </script>
-</body>
-</html>""".replace("__MIC_RATE__", str(LIVE_MIC_SAMPLE_RATE))
+        return index_html
 
     return app
 

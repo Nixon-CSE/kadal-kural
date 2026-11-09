@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kadal Kural desk</title>
+  <meta name="description" content="Voice credit desk: every spoken order is checked against the buyer's credit before dispatch." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231D4F7C'/%3E%3Cpath d='M6 19c3 0 3-3 6-3s3 3 6 3 3-3 6-3 2 2 2 2' stroke='%23EAF1F0' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anek+Tamil:wdth,wght@75..125,300..800&display=swap" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body data-mic-rate="__MIC_RATE__">
+  <a class="skip" href="#ledger">Skip to ledger</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M6 19c3 0 3-3 6-3s3 3 6 3 3-3 6-3 2 2 2 2"/></svg>
+      <div>
+        <p class="brand-name">Kadal Kural <span lang="ta">கடல் குரல்</span></p>
+        <p class="brand-desk" id="deskTitle">Credit desk</p>
+      </div>
+    </div>
+    <ul class="health" aria-label="System status">
+      <li id="healthSpeech" class="pill" data-state="unknown"><span class="dot"></span><span class="pill-text">Checking speech service</span></li>
+      <li id="healthPhone" class="pill" data-state="unknown"><span class="dot"></span><span class="pill-text">Phone line</span></li>
+      <li class="pill pill-plain" title="Trades below this confidence are held and the trader is asked again">Confidence gate <strong id="gateValue">–</strong></li>
+    </ul>
+    <div class="topbar-actions">
+      <button class="btn btn-quiet" id="themeBtn" type="button" aria-label="Switch colour theme">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+      </button>
+      <button class="btn btn-quiet" id="resetBtn" type="button">Reset balances</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="turn" aria-labelledby="turnTitle">
+      <h1 id="turnTitle" class="visually-hidden">Live order</h1>
+
+      <div class="listen">
+        <button id="micBtn" class="mic" type="button" aria-pressed="false" aria-describedby="micHint">
+          <span class="mic-ring" aria-hidden="true"></span>
+          <svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+          <svg class="stop-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+          <span class="visually-hidden" id="micLabel">Start listening</span>
+        </button>
+        <div class="listen-text">
+          <p id="modeLine" class="mode" data-mode="idle" role="status" aria-live="polite">Ready</p>
+          <p id="micHint" class="hint">Press the microphone or the space bar, then speak an order in Tamil or Tanglish. Headphones stop the reply from being heard as speech.</p>
+        </div>
+      </div>
+
+      <div class="heard-block" aria-live="polite">
+        <p class="label">Heard</p>
+        <p id="heardText" class="heard-text is-empty" lang="ta">Waiting for the first order</p>
+      </div>
+
+      <div id="decisions" class="decisions" aria-live="polite"></div>
+
+      <form id="typeForm" class="type-form" autocomplete="off">
+        <label for="typeInput" class="visually-hidden">Type an order</label>
+        <input id="typeInput" type="text" lang="ta" placeholder="Or type an order, e.g. குமரனுக்கு 20 கிலோ டைகர் பிரான் 500 ரேட்டு" />
+        <button class="btn btn-primary" type="submit">Check order</button>
+      </form>
+
+      <section class="try-block" aria-labelledby="tryTitle">
+        <div class="panel-head">
+          <h2 id="tryTitle">Try an order</h2>
+          <p class="panel-note">Runs it through the same checks without the microphone</p>
+        </div>
+        <ul class="tries" id="tries"></ul>
+      </section>
+    </section>
+
+    <aside class="side">
+      <section aria-labelledby="creditTitle" class="panel">
+        <div class="panel-head">
+          <h2 id="creditTitle">Credit headroom</h2>
+          <p class="panel-note" id="exposureTotal"></p>
+        </div>
+        <ul id="buyers" class="buyers"></ul>
+      </section>
+
+      <section aria-labelledby="stepsTitle" class="panel">
+        <div class="panel-head">
+          <h2 id="stepsTitle">How each order is checked</h2>
+        </div>
+        <ol class="steps">
+          <li><strong>Hear.</strong> Gnani Prisma transcribes the trader's Tamil or Tanglish from 8 kHz audio.</li>
+          <li><strong>Understand.</strong> Tamil numbers and case endings are normalised, then buyer, item, quantity, unit and rate are matched to the catalog.</li>
+          <li><strong>Gate.</strong> If any part is below <span id="gateStep">82%</span> confidence, or the price or quantity is implausible for the item, the trader is asked again.</li>
+          <li><strong>Credit check.</strong> The order's value is added to the buyer's balance; anything over the limit is held, not dispatched.</li>
+          <li><strong>Record and reply.</strong> The ledger gets a new entry (never an edit) and the answer is spoken back in Tamil. No AI model does the arithmetic.</li>
+        </ol>
+      </section>
+    </aside>
+
+    <section id="ledger" class="panel ledger" aria-labelledby="ledgerTitle">
+      <div class="panel-head">
+        <h2 id="ledgerTitle">Ledger</h2>
+        <dl class="tally" id="tally"></dl>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Heard</th><th>Buyer</th><th>Item</th><th class="num">Qty × rate</th><th class="num">Value</th><th>Decision</th><th>Confidence</th><th>Payment</th></tr>
+          </thead>
+          <tbody id="eventsTable"></tbody>
+        </table>
+        <p id="ledgerEmpty" class="empty" hidden>No entries yet. Speak an order, or pick one under “Try saying”.</p>
+      </div>
+      <p class="ledger-foot">Append-only: an undo adds a reversing entry and strikes through the original; nothing is deleted.</p>
+    </section>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="assertive"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

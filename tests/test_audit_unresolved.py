@@ -84,6 +84,8 @@ def test_hold_for_another_reason_keeps_confident_names(client: TestClient) -> No
 
 def test_dashboard_has_a_truncated_heard_column_with_tooltip(client: TestClient) -> None:
     html = client.get("/").text
+    script = client.get("/static/app.js").text
+    css = client.get("/static/app.css").text
     assert "<th>Time</th><th>Heard</th><th>Buyer</th>" in html
-    assert 'class="heard" title="${escapeHtml(e.raw_utterance)}"' in html
-    assert "td.heard {" in html and "text-overflow: ellipsis" in html
+    assert 'class="heard" title="${escapeHtml(e.raw_utterance)}"' in script
+    assert "td.heard {" in css and "text-overflow: ellipsis" in css
