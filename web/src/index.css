@@ -1,0 +1,184 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/anek-tamil/wdth.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Kadal Kural desk: white surfaces, lime as the signature, forest-ink text.
+   Decision colours stay semantic: booked = lime, hold = coral red, ask again = amber, undone = slate. */
+@theme inline {
+  --font-sans: "Anek Tamil Variable", "Noto Sans Tamil", system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-lime: var(--lime);
+  --color-lime-deep: var(--lime-deep);
+  --color-lime-soft: var(--lime-soft);
+  --color-ink: var(--ink);
+  --color-booked: var(--booked);
+  --color-booked-soft: var(--booked-soft);
+  --color-hold: var(--hold);
+  --color-hold-soft: var(--hold-soft);
+  --color-ask: var(--ask);
+  --color-ask-soft: var(--ask-soft);
+  --color-undone: var(--undone);
+  --color-undone-soft: var(--undone-soft);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.4);
+}
+
+:root {
+  --lime: #b5f23d;
+  --lime-deep: #4d7c0f;
+  --lime-soft: #f0fbd9;
+  --ink: #0f1d14;
+
+  --background: #f7f9f3;
+  --foreground: #0f1d14;
+  --card: #ffffff;
+  --card-foreground: #0f1d14;
+  --popover: #ffffff;
+  --popover-foreground: #0f1d14;
+  --primary: #0f1d14;
+  --primary-foreground: #f4ffe0;
+  --secondary: #eef3e6;
+  --secondary-foreground: #0f1d14;
+  --muted: #eef2e9;
+  --muted-foreground: #5b6b5f;
+  --accent: #f0fbd9;
+  --accent-foreground: #0f1d14;
+  --destructive: #d93a3a;
+  --border: #e1e8da;
+  --input: #dbe4d2;
+  --ring: #84cc16;
+
+  --booked: #3f7d0b;
+  --booked-soft: #e8f8c8;
+  --hold: #d93a3a;
+  --hold-soft: #fde6e4;
+  --ask: #b7791f;
+  --ask-soft: #fdf1d6;
+  --undone: #64748b;
+  --undone-soft: #eceff3;
+
+  --radius: 0.875rem;
+
+  /* Layered "physical" shadows: contact shadow + ambient lift */
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 1px 2px rgba(15, 29, 20, 0.06),
+    0 8px 24px -12px rgba(15, 29, 20, 0.18);
+  --shadow-lift: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 2px 4px rgba(15, 29, 20, 0.06),
+    0 24px 48px -20px rgba(15, 29, 20, 0.32);
+  --shadow-lime: 0 10px 40px -10px rgba(132, 204, 22, 0.55);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-variant-numeric: tabular-nums;
+  }
+  :focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Surfaces that read as physical objects: white face, top highlight, soft contact shadow. */
+  .surface {
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdf8 100%);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-card);
+  }
+  .surface-lift {
+    box-shadow: var(--shadow-lift);
+  }
+  .lime-key {
+    background: linear-gradient(180deg, #c8f75c 0%, #a3e635 55%, #8fd320 100%);
+    color: var(--ink);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 -2px 0 rgba(63, 125, 11, 0.35) inset,
+      0 6px 18px -6px rgba(132, 204, 22, 0.7);
+  }
+  .ink-key {
+    background: linear-gradient(180deg, #23382a 0%, #0f1d14 100%);
+    color: #f4ffe0;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 8px 20px -8px rgba(15, 29, 20, 0.6);
+  }
+  .tamil {
+    font-stretch: 108%;
+  }
+}
+
+/* Background: a receding lime grid floor with two soft light sources. */
+.stage-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background:
+    radial-gradient(60rem 40rem at 12% -10%, rgba(181, 242, 61, 0.28), transparent 60%),
+    radial-gradient(50rem 30rem at 100% 0%, rgba(132, 204, 22, 0.14), transparent 60%),
+    var(--background);
+}
+.stage-bg::before {
+  content: "";
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  bottom: -10%;
+  height: 70%;
+  background-image:
+    linear-gradient(to right, rgba(77, 124, 15, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(77, 124, 15, 0.12) 1px, transparent 1px);
+  background-size: 56px 56px;
+  transform: perspective(700px) rotateX(62deg);
+  transform-origin: top center;
+  mask-image: linear-gradient(to top, black 10%, transparent 85%);
+  animation: grid-drift 18s linear infinite;
+}
+@keyframes grid-drift {
+  to {
+    background-position: 0 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-bg::before {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

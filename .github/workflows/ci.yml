@@ -28,9 +28,21 @@ jobs:
       - name: Tests (no network, no API key)
         run: pytest -q
 
+  web:
+    runs-on: ubuntu-latest
+    container: node:20-slim
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install (lockfile)
+        working-directory: web
+        run: npm ci
+      - name: Type-check and build the desk
+        working-directory: web
+        run: npm run build
+
   docker:
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, web]
     steps:
       - uses: actions/checkout@v5
       - name: Build image

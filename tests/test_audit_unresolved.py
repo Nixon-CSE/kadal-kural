@@ -82,10 +82,7 @@ def test_hold_for_another_reason_keeps_confident_names(client: TestClient) -> No
     assert row["sku_guess_confidence"] == pytest.approx(1.0)
 
 
-def test_dashboard_has_a_truncated_heard_column_with_tooltip(client: TestClient) -> None:
-    html = client.get("/").text
-    script = client.get("/static/app.js").text
-    css = client.get("/static/app.css").text
-    assert "<th>Time</th><th>Heard</th><th>Buyer</th>" in html
-    assert 'class="heard" title="${escapeHtml(e.raw_utterance)}"' in script
-    assert "td.heard {" in css and "text-overflow: ellipsis" in css
+def test_ledger_has_a_truncated_heard_column_with_tooltip() -> None:
+    ledger = (Path(__file__).resolve().parents[1] / "web/src/components/desk/Ledger.tsx").read_text(encoding="utf-8")
+    assert "<TableHead>Time</TableHead><TableHead>Heard</TableHead><TableHead>Buyer</TableHead>" in ledger
+    assert "title={e.raw_utterance}" in ledger and "truncate" in ledger
