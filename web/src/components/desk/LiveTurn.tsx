@@ -27,6 +27,9 @@ const MODE_HINT: Record<string, string> = {
   error: "Fix the issue above, then press the microphone again.",
 };
 
+const COARSE = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+const IDLE_TOUCH = "Tap the microphone, then say an order in Tamil or Tanglish.";
+
 export function LiveTurn({ desk, inputRef }: { desk: DeskApi; inputRef: RefObject<HTMLInputElement | null> }) {
   const { mode, modeText, listening, turn, level, toggleMic, sendTranscript, play } = desk;
   const reduced = !!useReducedMotion();
@@ -49,7 +52,7 @@ export function LiveTurn({ desk, inputRef }: { desk: DeskApi; inputRef: RefObjec
       <div className="relative grid grid-cols-[minmax(0,1fr)] gap-6 p-5 sm:p-7 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]">
         {/* Orb + mic */}
         <div className="flex flex-col items-center">
-          <div className="relative aspect-square w-full max-w-[340px]">
+          <div className="relative aspect-square w-full max-w-[220px] sm:max-w-[300px] lg:max-w-[340px]">
             <Suspense fallback={<div className="absolute inset-[18%] animate-pulse rounded-full bg-lime/40" />}>
               <VoiceOrb mode={mode} tone={tone} level={level} reduced={reduced} className="absolute inset-0" />
             </Suspense>
@@ -70,7 +73,7 @@ export function LiveTurn({ desk, inputRef }: { desk: DeskApi; inputRef: RefObjec
               {listening ? <Square className="relative size-7 fill-lime text-lime" /> : <Mic className="relative size-8" strokeWidth={2.4} />}
             </button>
           </Magnet>
-          <p className="mt-3 text-xs text-muted-foreground">
+          <p className="mt-3 text-xs text-muted-foreground pointer-coarse:hidden">
             <Kbd>Space</Kbd> to talk · <Kbd>/</Kbd> to type · <Kbd>⌘K</Kbd> commands
           </p>
         </div>
@@ -78,14 +81,14 @@ export function LiveTurn({ desk, inputRef }: { desk: DeskApi; inputRef: RefObjec
         {/* Turn */}
         <div className="flex min-w-0 flex-col gap-5">
           <div role="status" aria-live="polite">
-            <p className={cn("text-3xl font-extrabold tracking-tight [font-stretch:110%]", mode === "error" && "text-hold")}>
+            <p className={cn("text-[clamp(1.6rem,6vw,1.875rem)] font-extrabold tracking-tight [font-stretch:110%]", mode === "error" && "text-hold")}>
               {mode === "listening" || mode === "thinking" ? (
                 <ShinyText text={modeText} color="#0f1d14" shineColor="#84cc16" speed={2.2} />
               ) : (
                 modeText
               )}
             </p>
-            <p className="mt-1 max-w-[62ch] text-sm text-muted-foreground">{MODE_HINT[mode]}</p>
+            <p className="mt-1 max-w-[62ch] text-sm text-muted-foreground">{mode === "idle" && COARSE ? IDLE_TOUCH : MODE_HINT[mode]}</p>
           </div>
 
           <div className="border-t pt-4" aria-live="polite">
@@ -124,7 +127,7 @@ export function LiveTurn({ desk, inputRef }: { desk: DeskApi; inputRef: RefObjec
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Or type an order, e.g. குமரனுக்கு 20 கிலோ டைகர் பிரான் 500 ரேட்டு"
-              className="h-12 rounded-xl bg-white text-base"
+              className="h-12 rounded-xl bg-white text-base" enterKeyHint="send"
             />
             <Button type="submit" className="ink-key h-12 gap-2 rounded-xl px-5 text-base">
               Check order <CornerDownLeft className="size-4" />
@@ -141,7 +144,7 @@ export function LiveTurn({ desk, inputRef }: { desk: DeskApi; inputRef: RefObjec
                   whileHover={reduced ? undefined : { y: -2 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => void sendTranscript(t.text)}
-                  className="group surface flex flex-col items-start gap-1 rounded-xl p-3 text-left hover:border-lime"
+                  className="group surface flex min-h-14 flex-col items-start gap-1 rounded-xl p-3 text-left hover:border-lime"
                 >
                   <span lang="ta" className="tamil text-sm font-semibold leading-snug">{t.text}</span>
                   <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">

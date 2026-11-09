@@ -1,4 +1,4 @@
-import { ContactShadows, Environment, Float, Lightformer, MeshDistortMaterial, RoundedBox, Sparkles } from "@react-three/drei";
+import { ContactShadows, Environment, Float, Lightformer, MeshDistortMaterial, RoundedBox } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import * as THREE from "three";
@@ -27,19 +27,6 @@ function Slip({ position, rotation, tone = "#b5f23d", scale = 1 }: { position: [
           <meshStandardMaterial color={tone} roughness={0.4} />
         </mesh>
       </group>
-    </Float>
-  );
-}
-
-function Coin({ position, color, speed = 1 }: { position: [number, number, number]; color: string; speed?: number }) {
-  const ref = useRef<THREE.Mesh>(null);
-  useFrame((_, dt) => { if (ref.current) ref.current.rotation.y += dt * speed; });
-  return (
-    <Float speed={2} floatIntensity={1.2}>
-      <mesh ref={ref} position={position} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.32, 0.32, 0.07, 32]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={color === "#0f1d14" ? 0 : 0.18} metalness={0.25} roughness={0.28} />
-      </mesh>
     </Float>
   );
 }
@@ -93,10 +80,6 @@ export default function HeroScene({ reduced }: { reduced: boolean }) {
       <Slip position={[2.6, 0.9, -0.4]} rotation={[-0.05, -0.55, 0.1]} tone="#e05252" scale={0.9} />
       <Slip position={[2.3, -1.25, 0.4]} rotation={[0.2, -0.35, -0.08]} tone="#f0b93a" scale={0.8} />
       <Slip position={[-2.4, -1.2, 0.3]} rotation={[-0.15, 0.4, 0.14]} scale={0.85} />
-      <Coin position={[-1.35, 1.75, 0.6]} color="#b5f23d" speed={1.2} />
-      <Coin position={[1.5, 1.9, 0.2]} color="#0f1d14" speed={-0.9} />
-      <Coin position={[0.1, -1.95, 1]} color="#d9f99d" speed={1.6} />
-      {!reduced && <Sparkles count={24} scale={[8, 5, 4]} size={2.2} speed={0.3} color="#84cc16" opacity={0.6} />}
       <ContactShadows frames={1} position={[0, -2.4, 0]} opacity={0.3} scale={12} blur={2.8} far={4} color="#0f1d14" />
       <Environment resolution={128} frames={1}>
         <Lightformer form="rect" intensity={2.4} position={[0, 5, -4]} scale={[10, 3, 1]} />

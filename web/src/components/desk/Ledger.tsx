@@ -90,11 +90,11 @@ export function Ledger({ events, gate, newIds, limit, full, buyers = [] }: Ledge
         <h2 id="ledger-title" className="mr-auto text-lg font-extrabold tracking-tight">Ledger</h2>
         <div className="relative w-full sm:w-auto">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search buyer, item or words" className="h-9 w-full rounded-full bg-white pl-9 sm:w-64" aria-label="Search the ledger" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search buyer, item or words" className="h-10 w-full rounded-full bg-white pl-9 text-base sm:w-64 sm:text-sm" type="search" enterKeyHint="search" aria-label="Search the ledger" />
         </div>
-        <ToggleGroup type="single" value={filter} onValueChange={(v) => v && setFilter(v as Filter)} className="surface max-w-full flex-wrap rounded-full p-1" aria-label="Filter by decision">
+        <ToggleGroup type="single" value={filter} onValueChange={(v) => v && setFilter(v as Filter)} className="surface max-w-full flex-nowrap justify-start overflow-x-auto rounded-full p-1 [scrollbar-width:none]" aria-label="Filter by decision">
           {FILTERS.map((f) => (
-            <ToggleGroupItem key={f.value} value={f.value} className="h-7 rounded-full px-3 text-xs data-[state=on]:bg-lime data-[state=on]:text-ink">
+            <ToggleGroupItem key={f.value} value={f.value} className="h-7 rounded-full px-3 text-xs data-[state=on]:bg-lime data-[state=on]:text-ink shrink-0 pointer-coarse:h-9 pointer-coarse:px-3.5 pointer-coarse:text-sm">
               {f.label} <span className="ml-1 opacity-60">{counts[f.value]}</span>
             </ToggleGroupItem>
           ))}
@@ -113,7 +113,7 @@ export function Ledger({ events, gate, newIds, limit, full, buyers = [] }: Ledge
               type="button"
               onClick={() => setBuyer(b.buyer_id)}
               aria-pressed={buyer === b.buyer_id}
-              className={cn("rounded-full border px-3 py-1 text-sm font-semibold transition-colors", buyer === b.buyer_id ? "border-lime bg-lime-soft" : "bg-white hover:border-lime")}
+              className={cn("rounded-full border px-3 py-1 text-sm font-semibold transition-colors pointer-coarse:py-2", buyer === b.buyer_id ? "border-lime bg-lime-soft" : "bg-white hover:border-lime")}
             >
               {b.canonical_name}
             </button>
@@ -121,7 +121,10 @@ export function Ledger({ events, gate, newIds, limit, full, buyers = [] }: Ledge
         </div>
       )}
 
-      <div className="-mx-5 overflow-x-auto px-5">
+      <ul className="grid gap-2 md:hidden">
+        {shown.map((e) => <EntryCard key={e.event_id} e={e} voided={voided.has(e.event_id)} fresh={newIds.has(e.event_id)} onOpen={() => setOpen(e)} />)}
+      </ul>
+      <div className="-mx-5 hidden overflow-x-auto px-5 md:block">
         <Table className="min-w-[900px]">
           <TableHeader>
             <TableRow>
@@ -160,12 +163,12 @@ export function Ledger({ events, gate, newIds, limit, full, buyers = [] }: Ledge
             })}
           </TableBody>
         </Table>
-        {rows.length === 0 && (
-          <p className="py-10 text-center text-muted-foreground">
-            {events.length === 0 ? "No entries yet. Say an order, or pick one under “Try an order”." : "No entries match this search or filter."}
-          </p>
-        )}
       </div>
+      {rows.length === 0 && (
+        <p className="py-10 text-center text-muted-foreground">
+          {events.length === 0 ? "No entries yet. Say an order, or pick one under “Try an order”." : "No entries match this search or filter."}
+        </p>
+      )}
       {limit && rows.length > limit && (
         <Link to="/ledger" className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-lime-deep hover:gap-3">
           View all {rows.length} entries <ArrowRight className="size-4" />
@@ -178,11 +181,39 @@ export function Ledger({ events, gate, newIds, limit, full, buyers = [] }: Ledge
   );
 }
 
+/** Phone layout: one tappable card per entry instead of a ten-column table. */
+function EntryCard({ e, voided, fresh, onOpen }: { e: LedgerEvent; voided: boolean; fresh: boolean; onOpen: () => void }) {
+  return (
+    <motion.li
+      initial={fresh ? { backgroundColor: "rgba(181,242,61,0.45)", opacity: 0, y: -6 } : false}
+      animate={{ backgroundColor: "rgba(255,255,255,1)", opacity: 1, y: 0 }}
+      transition={{ duration: 1.2 }}
+      className="rounded-2xl border bg-white"
+    >
+      <button type="button" onClick={onOpen} className="grid w-full gap-1.5 p-3.5 text-left active:bg-lime-soft/60">
+        <span className="flex items-center gap-2">
+          <StatusChip status={e.status} />
+          {voided && <span className="text-xs font-semibold text-muted-foreground">undone</span>}
+          <span className="ml-auto text-xs text-muted-foreground">{e.created_at}</span>
+          <ChevronRight className="size-4 text-muted-foreground" />
+        </span>
+        <span lang="ta" className={cn("tamil line-clamp-2 text-[15px] font-semibold leading-snug", voided && "line-through opacity-60")}>{e.raw_utterance}</span>
+        <span className={cn("flex flex-wrap items-baseline gap-x-2 text-sm", voided && "line-through opacity-60")}>
+          <span className="font-semibold">{e.buyer_name || "Unknown buyer"}</span>
+          <span className="text-muted-foreground">{e.sku_name}{e.quantity ? ` · ${e.quantity} ${e.unit} × ${inr(e.rate_inr)}` : ""}</span>
+          <span className="ml-auto font-extrabold">{inr(e.trade_value_inr)}</span>
+        </span>
+        {e.upi_link_visible && !voided && <span className="inline-flex items-center gap-1 text-xs font-semibold text-lime-deep"><QrCode className="size-3.5" /> UPI payment ready</span>}
+      </button>
+    </motion.li>
+  );
+}
+
 function EntrySheet({ entry, voided, gate, onClose }: { entry: LedgerEvent | null; voided: boolean; gate: number; onClose: () => void }) {
   const showUpi = !!entry && entry.upi_link_visible && !voided && entry.upi_payment_uri.startsWith("upi:");
   return (
     <Sheet open={!!entry} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+      <SheetContent className="w-full overflow-y-auto pb-[env(safe-area-inset-bottom)] sm:max-w-md">
         {entry && (
           <>
             <SheetHeader>

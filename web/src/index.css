@@ -109,6 +109,21 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-variant-numeric: tabular-nums;
+    min-height: 100dvh;
+  }
+  html {
+    scroll-padding-top: 5rem; /* anchors land below the sticky header */
+  }
+  /* Touch: no grey flash on tap, no double-tap zoom delay on controls. */
+  a,
+  button,
+  [role="button"],
+  [role="radio"],
+  input,
+  label,
+  summary {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
   :focus-visible {
     outline: 3px solid var(--ring);

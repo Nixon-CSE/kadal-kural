@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { DeskState } from "@/lib/api";
-import { NAV } from "@/lib/nav";
+import { isActive, NAV } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 function Dot({ on }: { on: boolean | null }) {
@@ -24,8 +24,8 @@ export function Header({ desk, listening, onCommand }: { desk: DeskState | null;
   const progress = useSpring(scrollYProgress, { stiffness: 140, damping: 24 });
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border/70 bg-background/95">
-      <div className="mx-auto flex max-w-[1480px] items-center gap-4 px-4 py-2.5 sm:px-6">
+    <header className="sticky top-0 z-40 border-b border-border/70 bg-background/95 pt-[env(safe-area-inset-top)]">
+      <div className="mx-auto flex max-w-[1480px] items-center gap-4 py-2.5 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] sm:px-6">
         <NavLink to="/" className="flex shrink-0 items-center gap-2.5" aria-label="Kadal Kural home">
           <motion.span
             initial={{ rotateY: -90, opacity: 0 }}
@@ -37,16 +37,16 @@ export function Header({ desk, listening, onCommand }: { desk: DeskState | null;
           >
             <Waves className="size-5.5 text-lime" strokeWidth={2.4} />
           </motion.span>
-          <span className="hidden leading-tight sm:block">
-            <span className="text-lg font-extrabold tracking-tight [font-stretch:115%] bg-gradient-to-r from-ink via-lime-deep to-ink bg-clip-text text-transparent">Kadal Kural</span>
-            <span className="block text-[11px] text-muted-foreground">{desk?.domain_title ?? "Credit desk"}</span>
+          <span className="leading-tight">
+            <span className="text-lg font-bold tracking-tight">Kadal Kural</span>
+            <span className="hidden text-xs text-muted-foreground sm:block lg:hidden xl:block">{desk?.domain_title ?? "Credit desk"}</span>
           </span>
         </NavLink>
 
-        <nav aria-label="Main" className="mx-auto -my-1 flex min-w-0 overflow-x-auto py-1 [scrollbar-width:none]">
+        <nav aria-label="Main" className="mx-auto hidden min-w-0 lg:flex">
           <ul className="surface flex items-center gap-0.5 rounded-full p-1">
             {NAV.map((n) => {
-              const active = n.to === "/" ? pathname === "/" : pathname.startsWith(n.to);
+              const active = isActive(n.to, pathname);
               return (
                 <li key={n.to} className="relative">
                   <NavLink
@@ -54,6 +54,7 @@ export function Header({ desk, listening, onCommand }: { desk: DeskState | null;
                     className={cn("relative z-10 block rounded-full px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors", active ? "text-ink" : "text-muted-foreground hover:text-foreground")}
                   >
                     {n.label}
+                    {n.badge && !active && <span className="ml-1.5 rounded bg-lime-soft px-1 py-px align-[1px] text-[10px] font-bold text-lime-deep">{n.badge}</span>}
                     {n.to === "/desk" && listening && <span className="ml-1.5 inline-block size-1.5 animate-pulse rounded-full bg-hold align-middle" aria-label="listening" />}
                   </NavLink>
                   {active && (
@@ -82,9 +83,13 @@ export function Header({ desk, listening, onCommand }: { desk: DeskState | null;
             <Command className="size-4" /> <Kbd>⌘K</Kbd>
           </Button>
         </div>
-        <Button variant="outline" size="icon" className="surface size-9 shrink-0 rounded-full lg:hidden" onClick={onCommand} aria-label="Commands">
-          <Command className="size-4" />
-        </Button>
+        <span
+          className="surface ml-auto inline-flex h-9 shrink-0 items-center gap-2 rounded-full px-3 text-xs font-semibold lg:hidden"
+          aria-label={`Speech ${desk?.gnani_live_key_configured ? "live" : "off"}, phone line ${desk?.phone_channel_enabled ? "on" : "off"}`}
+        >
+          <Dot on={desk ? desk.gnani_live_key_configured : null} /> <Mic className="size-3.5" />
+          <Dot on={desk ? desk.phone_channel_enabled : null} /> <Phone className="size-3.5" />
+        </span>
       </div>
       <motion.div className="absolute bottom-0 left-0 h-0.5 w-full origin-left bg-gradient-to-r from-lime to-lime-deep" style={{ scaleX: progress }} />
     </header>

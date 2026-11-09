@@ -83,7 +83,7 @@ function Histogram({ events, gate }: { events: LedgerEvent[]; gate: number }) {
             initial={{ height: 0 }} animate={{ height: `${(c / max) * 120 + 4}px` }} transition={{ type: "spring", stiffness: 80, damping: 16, delay: i * 0.05 }}
             className={i >= 3 ? "w-full rounded-t-lg bg-gradient-to-t from-lime-deep to-lime" : "w-full rounded-t-lg bg-gradient-to-t from-ask to-amber-200"}
           />
-          <span className="text-center text-[11px] text-muted-foreground">{labels[i]}</span>
+          <span className="text-center text-xs text-muted-foreground">{labels[i]}</span>
         </div>
       ))}
     </div>

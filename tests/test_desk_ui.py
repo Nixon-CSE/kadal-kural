@@ -80,3 +80,20 @@ def test_unknown_paths_are_still_404(client: TestClient) -> None:
 
 def test_desk_pages_are_not_reachable_through_the_public_tunnel(client: TestClient) -> None:
     assert client.get("/ledger", headers={"Cf-Connecting-Ip": "203.0.113.7"}).status_code == 403
+
+
+def test_page_is_installable_and_notch_safe(client: TestClient) -> None:
+    """Phones and tablets: safe-area viewport, a web manifest and touch icons that are actually served."""
+    page = client.get("/").text
+    assert "viewport-fit=cover" in page
+    manifest_href = re.search(r'<link rel="manifest" href="([^"]+)"', page)
+    assert manifest_href, "index.html must link a web manifest"
+    manifest = client.get(manifest_href.group(1))
+    assert manifest.status_code == 200
+    data = manifest.json()
+    assert data["display"] == "standalone"
+    assert data["start_url"] in DESK_PAGES
+    for icon in data["icons"]:
+        assert client.get(icon["src"]).status_code == 200, icon["src"]
+    touch_icon = re.search(r'<link rel="apple-touch-icon" href="([^"]+)"', page)
+    assert touch_icon and client.get(touch_icon.group(1)).status_code == 200
