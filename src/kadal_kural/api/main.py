@@ -16,17 +16,28 @@ import hmac
 import io
 import json
 import logging
+import re
 import time
 import wave
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Mapping, Optional
+from urllib.parse import parse_qs
 
 import websockets
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from websockets.exceptions import ConnectionClosed
 
 from kadal_kural.api.edge import PublicEdgeGuard
@@ -69,12 +80,13 @@ def _enable_timing_log() -> None:
     no handlers, so INFO records would be dropped; in that case the timing logger gets its own
     stderr handler that writes each record's message (one JSON object) as one line.
     """
-    timing = logging.getLogger(TIMING_LOGGER_NAME)
-    timing.setLevel(logging.INFO)
-    if not timing.handlers and not logging.getLogger().handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(message)s"))
-        timing.addHandler(handler)
+    for name, fmt in ((TIMING_LOGGER_NAME, "%(message)s"), (PHONE_LOGGER_NAME, "PHONE %(message)s")):
+        named = logging.getLogger(name)
+        named.setLevel(logging.INFO)
+        if not named.handlers and not logging.getLogger().handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter(fmt))
+            named.addHandler(handler)
 
 
 def _decision_items(turn: VoiceTurn) -> List[Dict[str, Any]]:
@@ -104,21 +116,46 @@ class UtteranceIngestRequest(BaseModel):
     synthesize_tts: bool = Field(default=True)
 
 
-class PhoneTurnRequest(BaseModel):
-    """
-    One caller turn forwarded by the Gnani Agent Builder On-Call action. The agent passes the
-    caller's words verbatim; it never extracts amounts itself ("STT extracts; code calculates").
-    ``user_text`` and ``text`` are accepted as aliases of ``transcript`` so the action body can
-    use the platform's own placeholder name.
-    """
+PHONE_TRANSCRIPT_KEYS = ("transcript", "user_text", "text")
+_UNFILLED_TEMPLATE = re.compile(r"^\s*\{\{.*\}\}\s*$")
+PHONE_LOGGER_NAME = "kadal_kural.phone"
+phone_logger = logging.getLogger(PHONE_LOGGER_NAME)
 
-    model_config = ConfigDict(populate_by_name=True)
 
-    transcript: str = Field(
-        ..., min_length=2, validation_alias=AliasChoices("transcript", "user_text", "text")
-    )
-    conversation_id: Optional[str] = Field(default=None, max_length=128)
-    caller_name: Optional[str] = Field(default=None, max_length=128)
+def parse_phone_fields(content_type: str, raw_body: bytes, query: Mapping[str, str]) -> Dict[str, str]:
+    """
+    Fields of one phone turn, however the agent platform sent them: a JSON object, a JSON string,
+    form-urlencoded fields, a plain-text body, or query parameters (body wins over query).
+    Platforms differ and some test consoles send no body at all, so this never raises.
+    """
+    fields: Dict[str, str] = {}
+    text = raw_body.decode("utf-8", errors="replace").strip() if raw_body else ""
+    ctype = content_type.split(";")[0].strip().lower()
+    if text:
+        parsed: Any = None
+        if ctype == "application/x-www-form-urlencoded":
+            parsed = {k: v[-1] for k, v in parse_qs(text, keep_blank_values=True).items()}
+        else:
+            try:
+                parsed = json.loads(text)
+            except ValueError:
+                parsed = text if ctype in ("", "text/plain") else None
+        if isinstance(parsed, dict):
+            fields.update({str(k): str(v) for k, v in parsed.items() if v is not None and not isinstance(v, (dict, list))})
+        elif isinstance(parsed, str):
+            fields["transcript"] = parsed
+    for key, value in query.items():
+        fields.setdefault(key, value)
+    return fields
+
+
+def phone_transcript(fields: Mapping[str, str]) -> Optional[str]:
+    """The caller's words, or None when absent, too short, or an unfilled ``{{placeholder}}``."""
+    for key in PHONE_TRANSCRIPT_KEYS:
+        value = (fields.get(key) or "").strip()
+        if len(value) >= 2 and not _UNFILLED_TEMPLATE.match(value):
+            return value
+    return None
 
 
 class PhoneTurnResponse(BaseModel):
@@ -129,6 +166,7 @@ class PhoneTurnResponse(BaseModel):
     held_count: int
     statuses: List[str]
     conversation_id: Optional[str] = None
+    transcript_received: bool = True  # False: nothing usable arrived, so the reply asks to repeat
 
 
 def phone_reply_text(turn: VoiceTurn) -> str:
@@ -208,7 +246,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
 
     @app.post("/api/v1/phone-turn", response_model=PhoneTurnResponse)
     async def phone_turn(
-        payload: PhoneTurnRequest,
+        request: Request,
         x_kadal_token: Optional[str] = Header(default=None, alias=PHONE_TOKEN_HEADER),
         authorization: Optional[str] = Header(default=None),
     ) -> PhoneTurnResponse:
@@ -216,22 +254,43 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         Phone channel. Gnani Agent Builder handles the call (dialling, STT, TTS) and forwards
         each caller turn here; the same deterministic firewall books, holds or asks to repeat,
         and the agent speaks ``reply_text``. No Timbre synthesis runs here: the agent speaks.
+
+        The token is checked before the body is read. The transcript may arrive as JSON, form
+        fields or query parameters under ``transcript``, ``user_text`` or ``text``. A turn with
+        no usable transcript still gets a 200 and the clarification prompt, and writes nothing.
         """
         _require_phone_token(x_kadal_token, authorization)
+        content_type = request.headers.get("content-type", "")
+        raw = await request.body()
+        if content_type.lower().startswith("multipart/form-data"):
+            form = await request.form()
+            fields = {k: v for k, v in form.items() if isinstance(v, str)}
+            fields.update({k: v for k, v in request.query_params.items() if k not in fields})
+        else:
+            fields = parse_phone_fields(content_type, raw, request.query_params)
+        transcript = phone_transcript(fields)
+        conversation_id = (fields.get("conversation_id") or "")[:128] or None
+        phone_logger.info(
+            "phone turn received: content_type=%s body_bytes=%d fields=%s transcript=%s",
+            content_type or "-", len(raw), sorted(fields), "yes" if transcript else "MISSING",
+        )
+        if transcript is None:
+            return PhoneTurnResponse(
+                reply_text=CLARIFICATION_PROMPT_TAMIL, booked_count=0, held_count=0, statuses=[],
+                conversation_id=conversation_id, transcript_received=False,
+            )
         turn = await run_voice_turn(
-            firewall, speech_client, payload.transcript, path=TIMING_PATH_PHONE_AGENT, synthesize=False
+            firewall, speech_client, transcript, path=TIMING_PATH_PHONE_AGENT, synthesize=False
         )
         statuses = [d.status.value for d in turn.evaluation.decisions]
         booked = {LedgerEventStatus.BOOKED.value, LedgerEventStatus.BOOKED_AFTER_BARGE_IN.value}
-        logger.info(
-            "phone turn conversation=%s statuses=%s", payload.conversation_id or "-", ",".join(statuses) or "none"
-        )
+        phone_logger.info("phone turn decided: conversation=%s statuses=%s", conversation_id or "-", ",".join(statuses) or "none")
         return PhoneTurnResponse(
             reply_text=phone_reply_text(turn),
             booked_count=sum(s in booked for s in statuses),
             held_count=sum(s not in booked for s in statuses),
             statuses=statuses,
-            conversation_id=payload.conversation_id,
+            conversation_id=conversation_id,
         )
 
     @app.post("/api/v1/upload-wav")
