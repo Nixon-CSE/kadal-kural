@@ -18,6 +18,27 @@ class LedgerEventStatus(str, Enum):
     VOIDED_BY_UNDO = "VOIDED_BY_UNDO"
 
 
+class OrderChannel(str, Enum):
+    """How an order reached the desk. Stored on every ledger entry the order produced."""
+
+    DESK_VOICE = "voice"  # the desk microphone, live through Gnani Prisma
+    TYPED = "typed"  # typed into the desk, or a sample order
+    PHONE = "phone"  # a phone call, forwarded turn by turn by a Gnani Agent Builder agent
+    AUDIO_FILE = "file"  # an uploaded WAV, transcribed by Gnani Prisma
+
+
+class EntrySource(BaseModel):
+    """Where a ledger entry came from: its channel and, for a phone call, the call it belongs to."""
+
+    model_config = ConfigDict(frozen=True)
+
+    channel: Optional[OrderChannel] = None
+    call_id: Optional[str] = Field(default=None, max_length=128)
+
+
+UNKNOWN_SOURCE = EntrySource()
+
+
 class BuyerProfile(BaseModel):
     """Registered B2B wholesale buyer entity."""
 

@@ -23,7 +23,12 @@ from kadal_kural.config import (
     TIMING_ORIGIN_REQUEST,
     TIMING_WALL_CLOCK_FORMAT,
 )
-from kadal_kural.domain.models import CreditGateDecision, LedgerEventStatus
+from kadal_kural.domain.models import (
+    UNKNOWN_SOURCE,
+    CreditGateDecision,
+    EntrySource,
+    LedgerEventStatus,
+)
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.domain.telemetry import PipelineTelemetry, UtteranceEvaluation
 from kadal_kural.infrastructure.gnani_client import SynthesisTelemetry
@@ -76,6 +81,7 @@ async def run_voice_turn(
     on_evaluated: Optional[Callable[[UtteranceEvaluation], Awaitable[None]]] = None,
     on_reply: Optional[Callable[[Optional[CreditGateDecision], SynthesisTelemetry], Awaitable[None]]] = None,
     clock: NanosecondClock = time.perf_counter_ns,
+    source: EntrySource = UNKNOWN_SOURCE,
 ) -> VoiceTurn:
     """
     Evaluates ``transcript`` and (if ``synthesize``) speaks every decision. The timeline's
@@ -85,7 +91,8 @@ async def run_voice_turn(
     ``decision_stt_latency_ms`` overrides it. ``segment_received_ns`` are when each segment
     arrived; the gaps between them are logged as ``segment_gaps_ms``. One JSON timing line is logged even when a
     synthesis fails part-way. When synthesizing, every turn speaks: with no decision at all, the
-    clarification prompt (``on_reply`` then gets None for the decision).
+    clarification prompt (``on_reply`` then gets None for the decision). ``source`` (channel and
+    phone call) is stored on every ledger entry the turn writes.
     """
     now_ns = clock()
     spans = PerfCounterSpanRecorder(clock, origin_ns=now_ns if first_segment_ns is None else first_segment_ns)
@@ -96,7 +103,9 @@ async def run_voice_turn(
             round(sum(stt_latencies_ms) / len(stt_latencies_ms), 1) if stt_latencies_ms else 0.0
         )
 
-    evaluation = firewall.evaluate_utterance_timed(transcript, stt_latency_ms=decision_stt_latency_ms, spans=spans)
+    evaluation = firewall.evaluate_utterance_timed(
+        transcript, stt_latency_ms=decision_stt_latency_ms, spans=spans, source=source
+    )
     replies: List[Optional[SynthesisTelemetry]] = []
     prompt_reply: Optional[SynthesisTelemetry] = None
     first_byte_started = first_byte_seen = False

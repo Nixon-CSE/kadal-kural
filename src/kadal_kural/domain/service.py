@@ -19,7 +19,9 @@ from kadal_kural.config import (
 )
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
 from kadal_kural.domain.models import (
+    UNKNOWN_SOURCE,
     CreditGateDecision,
+    EntrySource,
     HeldTradeContext,
     LedgerEventStatus,
     TradeIntent,
@@ -76,21 +78,24 @@ class PreDispatchCreditFirewallService:
         return f"upi://pay?{query}"
 
     def evaluate_utterance(
-        self, raw_utterance: str, stt_latency_ms: float = 0.0
+        self, raw_utterance: str, stt_latency_ms: float = 0.0, *, source: EntrySource = UNKNOWN_SOURCE
     ) -> List[CreditGateDecision]:
         """The decisions for one utterance; evaluate_utterance_timed also returns timings."""
-        return list(self.evaluate_utterance_timed(raw_utterance, stt_latency_ms).decisions)
+        return list(self.evaluate_utterance_timed(raw_utterance, stt_latency_ms, source=source).decisions)
 
     def evaluate_utterance_timed(
         self,
         raw_utterance: str,
         stt_latency_ms: float = 0.0,
         spans: Optional[SpanRecorder] = None,
+        *,
+        source: EntrySource = UNKNOWN_SOURCE,
     ) -> UtteranceEvaluation:
         """
         Evaluates one utterance, timing normalize, match and decide (incl. the SQLite write).
         Pass ``spans`` to record onto a caller's timeline (e.g. one that already holds the
-        STT spans); otherwise a fresh recorder comes from the injected factory.
+        STT spans); otherwise a fresh recorder comes from the injected factory. ``source``
+        (channel and phone call) is stored on every ledger entry the utterance writes.
         """
         spans = self._span_recorder_factory() if spans is None else spans
         tokens = set(raw_utterance.lower().split())
@@ -99,7 +104,7 @@ class PreDispatchCreditFirewallService:
         # Check for pure Voice Undo command ('கடைசி ஆர்டர் கேன்சல்' / 'last trade cancel')
         if not has_digits and (tokens & UNDO_COMMAND_TRIGGERS):
             with recorded_span(spans, SPAN_UNDO):
-                undo_info = self.repository.undo_last_booked_trade(raw_utterance)
+                undo_info = self.repository.undo_last_booked_trade(raw_utterance, source)
             if undo_info is not None:
                 if undo_info["already_voided"]:  # no row written; event_id is the earlier void
                     tts_msg = UNDO_ALREADY_CANCELLED_TAMIL
@@ -137,12 +142,13 @@ class PreDispatchCreditFirewallService:
             )
         with recorded_span(spans, SPAN_DECIDE):
             decisions = tuple(
-                self._evaluate_single_intent(intent, stt_latency_ms=stt_latency_ms) for intent in intents
+                self._evaluate_single_intent(intent, stt_latency_ms=stt_latency_ms, source=source)
+                for intent in intents
             )
         return UtteranceEvaluation(decisions=decisions, telemetry=spans.telemetry())
 
     def _evaluate_single_intent(
-        self, intent: TradeIntent, stt_latency_ms: float = 0.0
+        self, intent: TradeIntent, stt_latency_ms: float = 0.0, source: EntrySource = UNKNOWN_SOURCE
     ) -> CreditGateDecision:
         # 1. CONFIDENCE GATE: Block silent financial errors before touching the ledger
         if (
@@ -180,6 +186,7 @@ class PreDispatchCreditFirewallService:
                 buyer_guess_confidence=intent.buyer_confidence,
                 sku_guess=intent.sku_name,
                 sku_guess_confidence=intent.sku_confidence,
+                source=source,
             )
             tts_msg = CLARIFICATION_PROMPT_TAMIL
             return CreditGateDecision(
@@ -230,6 +237,7 @@ class PreDispatchCreditFirewallService:
                 normalized_clause=intent.normalized_clause,
                 upi_payment_uri=upi_uri,
                 commit_balance=False,
+                source=source,
             )
             self.held_context = HeldTradeContext(
                 buyer_id=intent.buyer_id,
@@ -286,6 +294,7 @@ class PreDispatchCreditFirewallService:
             normalized_clause=intent.normalized_clause,
             upi_payment_uri=upi_uri,
             commit_balance=True,
+            source=source,
         )
         if intent.is_barge_in_override:
             self.held_context = None

@@ -31,6 +31,7 @@ from fastapi import (
     File,
     Header,
     HTTPException,
+    Query,
     Request,
     UploadFile,
     WebSocket,
@@ -56,8 +57,9 @@ from kadal_kural.config import (
     WS_PING_INTERVAL_SEC,
     AppSettings,
 )
+from kadal_kural.domain.calls import DEFAULT_CALL_GAP_SECONDS, group_phone_calls
 from kadal_kural.domain.matcher import BilingualCatalogMatcher
-from kadal_kural.domain.models import LedgerEventStatus
+from kadal_kural.domain.models import EntrySource, LedgerEventStatus, OrderChannel
 from kadal_kural.domain.service import PreDispatchCreditFirewallService
 from kadal_kural.infrastructure.gnani_client import (
     AssembledUtterance,
@@ -119,6 +121,9 @@ class UtteranceIngestRequest(BaseModel):
 
 
 PHONE_TRANSCRIPT_KEYS = ("transcript", "user_text", "text")
+# Field names an agent platform may use for the call it is forwarding, checked in this order.
+PHONE_CALL_ID_KEYS = ("conversation_id", "call_id", "session_id", "callsid", "call_sid")
+_CALL_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _UNFILLED_TEMPLATE = re.compile(r"^\s*\{\{.*\}\}\s*$")
 PHONE_LOGGER_NAME = "kadal_kural.phone"
 phone_logger = logging.getLogger(PHONE_LOGGER_NAME)
@@ -178,6 +183,25 @@ def phone_transcript(fields: Mapping[str, str]) -> Optional[str]:
         if len(value) >= 2 and not _UNFILLED_TEMPLATE.match(value):
             return value
     return None
+
+
+def phone_call_id(fields: Mapping[str, str]) -> Optional[str]:
+    """The call this turn belongs to, if the agent sent a plain id (an unfilled template is ignored)."""
+    lowered = {k.lower(): v for k, v in fields.items()}
+    for key in PHONE_CALL_ID_KEYS:
+        value = (lowered.get(key) or "").strip()
+        if value and _CALL_ID.match(value):
+            return value
+    return None
+
+
+# Buyer fields the browser never needs; contact details stay on the server.
+_PRIVATE_BUYER_FIELDS = frozenset({"phone_e164"})
+
+
+def public_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    buyers = [{k: v for k, v in b.items() if k not in _PRIVATE_BUYER_FIELDS} for b in snapshot["buyers"]]
+    return {**snapshot, "buyers": buyers}
 
 
 class SandboxRequest(BaseModel):
@@ -248,7 +272,26 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             "confidence_threshold": cfg.confidence_threshold,
             "gnani_live_key_configured": has_key,
             "phone_channel_enabled": bool(cfg.phone_webhook_token),
-            **repo.fetch_dashboard_snapshot(),
+            **public_snapshot(repo.fetch_dashboard_snapshot()),
+        }
+
+    @app.get("/api/v1/calls")
+    async def get_phone_calls(limit: int = Query(default=20, ge=1, le=100)) -> Dict[str, Any]:
+        """
+        The phone line's call log: phone-channel ledger entries grouped into calls, newest first.
+        Grouped by the agent's call id when it sends one, else by gaps of more than five minutes.
+        """
+        entries = repo.fetch_channel_events(OrderChannel.PHONE)
+        calls = [c.to_dict() for c in group_phone_calls(entries)]
+        return {
+            "phone_channel_enabled": bool(cfg.phone_webhook_token),
+            "gap_seconds": DEFAULT_CALL_GAP_SECONDS,
+            "summary": {
+                "calls": len(calls),
+                "entries": len(entries),
+                "booked_value_inr": sum(c["booked_value_inr"] for c in calls),
+            },
+            "calls": calls[:limit],
         }
 
     @app.post("/api/v1/ingest")
@@ -261,10 +304,11 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             path=TIMING_PATH_INGEST,
             decision_stt_latency_ms=payload.stt_latency_ms,
             synthesize=payload.synthesize_tts and has_key,
+            source=EntrySource(channel=OrderChannel.TYPED),
         )
         return {
             "decisions": _decision_items(turn),
-            "snapshot": repo.fetch_dashboard_snapshot(),
+            "snapshot": public_snapshot(repo.fetch_dashboard_snapshot()),
         }
 
     def _require_phone_token(x_kadal_token: Optional[str], authorization: Optional[str]) -> None:
@@ -305,7 +349,8 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         for key, value in header_fields.items():
             fields.setdefault(key, value)  # a console that puts the field under Headers still works
         transcript = phone_transcript(fields)
-        conversation_id = (fields.get("conversation_id") or "")[:128] or None
+        call_id = phone_call_id(fields)
+        conversation_id = call_id
         phone_logger.info(
             "phone turn received: content_type=%s body_bytes=%d fields=%s from_headers=%s header_names=%s transcript=%s",
             content_type or "-", len(raw), sorted(fields), sorted(header_fields),
@@ -318,7 +363,8 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                 conversation_id=conversation_id, transcript_received=False,
             )
         turn = await run_voice_turn(
-            firewall, speech_client, transcript, path=TIMING_PATH_PHONE_AGENT, synthesize=False
+            firewall, speech_client, transcript, path=TIMING_PATH_PHONE_AGENT, synthesize=False,
+            source=EntrySource(channel=OrderChannel.PHONE, call_id=call_id),
         )
         statuses = [d.status.value for d in turn.evaluation.decisions]
         booked = {LedgerEventStatus.BOOKED.value, LedgerEventStatus.BOOKED_AFTER_BARGE_IN.value}
@@ -381,7 +427,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             return {
                 "merged_transcript": "",
                 "decisions": [],
-                "snapshot": repo.fetch_dashboard_snapshot(),
+                "snapshot": public_snapshot(repo.fetch_dashboard_snapshot()),
             }
 
         turn = await run_voice_turn(
@@ -392,13 +438,14 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             stt_latencies_ms=latencies,
             first_segment_ns=received_ns[0],
             segment_received_ns=received_ns,
+            source=EntrySource(channel=OrderChannel.AUDIO_FILE),
         )
 
         return {
             "merged_transcript": merged_transcript,
             "stt_latency_ms": mean_lat,
             "decisions": _decision_items(turn),
-            "snapshot": repo.fetch_dashboard_snapshot(),
+            "snapshot": public_snapshot(repo.fetch_dashboard_snapshot()),
         }
 
     @app.websocket("/ws/live-audio")
@@ -445,6 +492,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                 stt_latencies_ms=utterance.segment_latencies_ms,
                 first_segment_ns=utterance.first_segment_ns,
                 segment_received_ns=utterance.segment_received_ns,
+                source=EntrySource(channel=OrderChannel.DESK_VOICE),
             )
             await client_ws.send_json(
                 {
@@ -452,7 +500,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
                     "assembled_transcript": utterance.text,
                     "stt_latency_ms": utterance.mean_stt_latency_ms,
                     "decisions": _decision_items(turn),
-                    "snapshot": repo.fetch_dashboard_snapshot(),
+                    "snapshot": public_snapshot(repo.fetch_dashboard_snapshot()),
                 }
             )
 
@@ -541,7 +589,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
         async with sandbox_lock:
             sandbox_repo.reset_to_seed_state()
             sandbox.held_context = None
-            return {"buyers": sandbox_repo.fetch_dashboard_snapshot()["buyers"]}
+            return {"buyers": public_snapshot(sandbox_repo.fetch_dashboard_snapshot())["buyers"]}
 
     @app.post("/api/v1/sandbox/evaluate")
     async def sandbox_evaluate(payload: SandboxRequest) -> Dict[str, Any]:
@@ -550,14 +598,14 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             decisions = sandbox.evaluate_utterance(payload.transcript)
             return {
                 "decisions": [d.model_dump(mode="json") for d in decisions],
-                "buyers": sandbox_repo.fetch_dashboard_snapshot()["buyers"],
+                "buyers": public_snapshot(sandbox_repo.fetch_dashboard_snapshot())["buyers"],
             }
 
     @app.post("/api/v1/reset")
     async def reset_ledger() -> Dict[str, Any]:
         repo.reset_to_seed_state()
         firewall.held_context = None
-        return {"status": "reset", "snapshot": repo.fetch_dashboard_snapshot()}
+        return {"status": "reset", "snapshot": public_snapshot(repo.fetch_dashboard_snapshot())}
 
     index_html = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace(
         "__MIC_RATE__", str(LIVE_MIC_SAMPLE_RATE)

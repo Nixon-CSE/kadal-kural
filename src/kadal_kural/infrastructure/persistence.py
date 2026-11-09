@@ -5,9 +5,16 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from kadal_kural.domain.models import BuyerProfile, LedgerEventStatus
+from kadal_kural.domain.models import (
+    UNKNOWN_SOURCE,
+    BuyerProfile,
+    EntrySource,
+    LedgerEventStatus,
+    OrderChannel,
+)
 
 # Only a committed trade is payable; holds, clarifications and undo rows never get a UPI link.
 _UPI_PAYABLE_STATUSES = frozenset(
@@ -21,6 +28,9 @@ _ADDED_LEDGER_COLUMNS: Dict[str, str] = {
     "buyer_guess_confidence": "REAL",
     "sku_guess": "TEXT",
     "sku_guess_confidence": "REAL",
+    "channel": "TEXT",  # OrderChannel value; NULL on entries written before channels were recorded
+    "call_id": "TEXT",  # the phone call an entry belongs to, when the agent sent an id
+    "recorded_at": "TEXT",  # ISO 8601 UTC; created_at keeps only the time of day
 }
 
 class AppendOnlyLedgerRepository:
@@ -76,7 +86,10 @@ class AppendOnlyLedgerRepository:
                     buyer_guess TEXT,
                     buyer_guess_confidence REAL,
                     sku_guess TEXT,
-                    sku_guess_confidence REAL
+                    sku_guess_confidence REAL,
+                    channel TEXT,
+                    call_id TEXT,
+                    recorded_at TEXT
                 );
                 """
             )
@@ -84,6 +97,7 @@ class AppendOnlyLedgerRepository:
             for name, sql_type in _ADDED_LEDGER_COLUMNS.items():  # ledgers created before they existed
                 if name not in columns:
                     cur.execute(f"ALTER TABLE ledger_events ADD COLUMN {name} {sql_type}")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_ledger_events_channel ON ledger_events (channel, event_id)")
             for buyer in self._seed_buyers:
                 cur.execute(
                     """
@@ -135,8 +149,11 @@ class AppendOnlyLedgerRepository:
         buyer_guess_confidence: Optional[float] = None,
         sku_guess: Optional[str] = None,
         sku_guess_confidence: Optional[float] = None,
+        source: EntrySource = UNKNOWN_SOURCE,
     ) -> int:
         now_str = time.strftime("%H:%M:%S")
+        recorded_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        channel = source.channel.value if source.channel is not None else None
         with self._lock:
             owns_transaction = not self._conn.in_transaction  # else a caller's transaction commits
             cur = self._conn.cursor()
@@ -151,9 +168,10 @@ class AppendOnlyLedgerRepository:
                     created_at, buyer_id, buyer_name, sku_name, quantity, unit,
                     rate_inr, trade_value_inr, previous_balance_inr, projected_balance_inr,
                     credit_limit_inr, status, confidence, raw_utterance, normalized_clause, upi_payment_uri,
-                    voids_event_id, buyer_guess, buyer_guess_confidence, sku_guess, sku_guess_confidence
+                    voids_event_id, buyer_guess, buyer_guess_confidence, sku_guess, sku_guess_confidence,
+                    channel, call_id, recorded_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     now_str,
@@ -177,13 +195,18 @@ class AppendOnlyLedgerRepository:
                     buyer_guess_confidence,
                     sku_guess,
                     sku_guess_confidence,
+                    channel,
+                    source.call_id,
+                    recorded_at,
                 ),
             )
             if owns_transaction:
                 self._conn.commit()
             return int(cur.lastrowid or 0)
 
-    def undo_last_booked_trade(self, raw_utterance: str) -> Optional[Dict[str, Any]]:
+    def undo_last_booked_trade(
+        self, raw_utterance: str, source: EntrySource = UNKNOWN_SOURCE
+    ) -> Optional[Dict[str, Any]]:
         """
         Compensating transaction for voice undo ('கடைசி ஆர்டர் கேன்சல்' / 'last trade cancel').
         Never deletes rows; writes an immutable VOIDED_BY_UNDO compensating entry.
@@ -199,14 +222,14 @@ class AppendOnlyLedgerRepository:
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
-                result = self._undo_last_booking(raw_utterance)
+                result = self._undo_last_booking(raw_utterance, source)
             except BaseException:
                 self._conn.rollback()
                 raise
             self._conn.commit()
             return result
 
-    def _undo_last_booking(self, raw_utterance: str) -> Optional[Dict[str, Any]]:
+    def _undo_last_booking(self, raw_utterance: str, source: EntrySource) -> Optional[Dict[str, Any]]:
         """undo_last_booked_trade's body; runs inside its transaction."""
         cur = self._conn.cursor()
         last_row = cur.execute(
@@ -268,6 +291,7 @@ class AppendOnlyLedgerRepository:
             upi_payment_uri="",
             commit_balance=True,
             voids_event_id=int(last_row["event_id"]),
+            source=source,
         )
         return {
             **booking_info,
@@ -285,6 +309,30 @@ class AppendOnlyLedgerRepository:
             self._conn.commit()
         self._initialize_schema()
 
+    def _voided_event_ids(self) -> set[int]:
+        return {
+            int(r["voids_event_id"])
+            for r in self._conn.execute(
+                "SELECT voids_event_id FROM ledger_events WHERE voids_event_id IS NOT NULL"
+            ).fetchall()
+        }
+
+    def fetch_channel_events(self, channel: OrderChannel, limit: int = 500) -> List[Dict[str, Any]]:
+        """The newest ``limit`` entries from one channel, oldest first, each with a ``voided`` flag."""
+        with self._lock:
+            rows = [
+                dict(r)
+                for r in self._conn.execute(
+                    "SELECT * FROM ledger_events WHERE channel = ? ORDER BY event_id DESC LIMIT ?",
+                    (channel.value, limit),
+                ).fetchall()
+            ]
+            voided_ids = self._voided_event_ids()
+        for row in rows:
+            row["voided"] = int(row["event_id"]) in voided_ids
+        rows.reverse()
+        return rows
+
     def fetch_dashboard_snapshot(self) -> Dict[str, List[Dict[str, Any]]]:
         with self._lock:
             buyers = [
@@ -297,12 +345,7 @@ class AppendOnlyLedgerRepository:
                     "SELECT * FROM ledger_events ORDER BY event_id DESC LIMIT 30"
                 ).fetchall()
             ]
-            voided_ids = {
-                int(r["voids_event_id"])
-                for r in self._conn.execute(
-                    "SELECT voids_event_id FROM ledger_events WHERE voids_event_id IS NOT NULL"
-                ).fetchall()
-            }
+            voided_ids = self._voided_event_ids()
         for event in events:
             event["upi_link_visible"] = (
                 event["status"] in _UPI_PAYABLE_STATUSES
