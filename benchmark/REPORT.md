@@ -71,6 +71,26 @@ Across 360 noisy runs the weakest extracted entity was **rate** (95.7% correct) 
 
 <!-- Hand-maintained sections below: run_eval.py keeps everything after this line. -->
 
+## Gate cost: trades booked at τ = 0.5 but held at τ = 0.82
+
+What the production threshold costs, by cause. Same 405 cached Prisma transcripts as above (`--analyze-only`, no API calls), code as of the fuzzy-boundary guard; no threshold was changed. Each transcript was scored on a fresh ledger at τ = 0.5 and at τ = 0.82, as the threshold sweep does. For every trade that books at 0.5 but not at 0.82, the table names the lowest of the terms the trade's overall confidence is the minimum of (buyer, SKU, unit, quantity, rate), or *leftover* when the leftover-number cap is lower still. No trade had two terms tied for lowest.
+
+| Lowest term | Trades | Noisy | Clean | Lowest-term values | What was heard |
+|---|---|---|---|---|---|
+| SKU | 33 | 29 | 4 | 0.600–0.783 | Misheard product names: `வஜ்ரம்` (0.769) and `வஜரம்` (0.675) for Vanjaram; `டைகட்ரான்` / `டைகப்ட்ரான்` (0.762–0.783) for Tiger Prawn; `காசு ஜப்ரான்` / `கார்ன்` (0.600–0.667) in `tanglish_02` |
+| unit | 4 | 4 | 0 | 0.750 | `tanglish_02`: spoken `kg` heard as `கார்`, so the unit falls back to the SKU's default `kg` at the assumed-unit confidence |
+| buyer | 2 | 2 | 0 | 0.529, 0.593 | `சந்திரசேகருக்கு` (`multi_08` @ market/5), `செந்தை தீவுக்கு` (`single_05` @ ice_crusher/5) |
+| quantity | 0 | 0 | 0 | — | |
+| rate | 0 | 0 | 0 | — | |
+| leftover | 0 | 0 | 0 | — | |
+| **total** | **39** | **35** | **4** | | |
+
+Reading it:
+
+- All 39 are trades τ = 0.5 books *correctly* (0 silent errors at τ = 0.5 on these transcripts), and every one is held as `PENDING_CLARIFICATION` at 0.82. On this data the gate between 0.5 and 0.82 blocks no wrong booking; it only costs these 39. The 35 noisy ones match the threshold sweep's 414 → 379.
+- The cost is almost all SKU mishearings (33 of 39), and most of those are two transcripts repeated across conditions: `வஜ்ரம்` (`single_14`, `multi_01`, 20 trades) and `வஜரம்` (`single_16`, 9 trades), both heard identically on clean audio. That points at the synthetic speaker's pronunciation as much as at noise.
+- Quantity and rate never decide a hold here: every quantity and rate in these trades is inside its catalog band.
+
 ## Before/after: Phase 3C fixes on the same transcripts
 
 Both columns score the **same 405 cached Prisma transcripts** (recorded 2026-10-31 for the current corpus); only the scoring code differs, so every change below comes from the code, not from STT variance.
