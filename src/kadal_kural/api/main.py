@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hmac
 import io
 import json
 import logging
@@ -19,10 +20,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
 import websockets
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from websockets.exceptions import ConnectionClosed
 
 from kadal_kural.config import (
@@ -30,9 +31,11 @@ from kadal_kural.config import (
     ASSEMBLER_INCOMPLETE_WINDOW_SEC,
     CLARIFICATION_PROMPT_TAMIL,
     LIVE_MIC_SAMPLE_RATE,
+    PHONE_TOKEN_HEADER,
     TIMING_LOGGER_NAME,
     TIMING_PATH_INGEST,
     TIMING_PATH_LIVE_WS,
+    TIMING_PATH_PHONE_AGENT,
     TIMING_PATH_UPLOAD_WAV,
     WS_PING_INTERVAL_SEC,
     AppSettings,
@@ -95,6 +98,39 @@ class UtteranceIngestRequest(BaseModel):
     synthesize_tts: bool = Field(default=True)
 
 
+class PhoneTurnRequest(BaseModel):
+    """
+    One caller turn forwarded by the Gnani Agent Builder On-Call action. The agent passes the
+    caller's words verbatim; it never extracts amounts itself ("STT extracts; code calculates").
+    ``user_text`` and ``text`` are accepted as aliases of ``transcript`` so the action body can
+    use the platform's own placeholder name.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    transcript: str = Field(
+        ..., min_length=2, validation_alias=AliasChoices("transcript", "user_text", "text")
+    )
+    conversation_id: Optional[str] = Field(default=None, max_length=128)
+    caller_name: Optional[str] = Field(default=None, max_length=128)
+
+
+class PhoneTurnResponse(BaseModel):
+    """What the agent speaks (``reply_text``) plus a compact, machine-readable summary."""
+
+    reply_text: str
+    booked_count: int
+    held_count: int
+    statuses: List[str]
+    conversation_id: Optional[str] = None
+
+
+def phone_reply_text(turn: VoiceTurn) -> str:
+    """Every turn answers: each decision's Tamil reply in order, or the clarification prompt."""
+    replies = [d.tts_response_tamil for d in turn.evaluation.decisions if d.tts_response_tamil]
+    return " ".join(replies) if replies else CLARIFICATION_PROMPT_TAMIL
+
+
 def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
     cfg = settings or AppSettings()
     _enable_timing_log()
@@ -150,6 +186,44 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             "decisions": _decision_items(turn),
             "snapshot": repo.fetch_dashboard_snapshot(),
         }
+
+    def _require_phone_token(x_kadal_token: Optional[str], authorization: Optional[str]) -> None:
+        expected = cfg.phone_webhook_token
+        if not expected:
+            raise HTTPException(status_code=503, detail="Phone channel is not configured")
+        presented = x_kadal_token or ""
+        if not presented and authorization and authorization.lower().startswith("bearer "):
+            presented = authorization[len("bearer "):].strip()
+        if not hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8")):
+            raise HTTPException(status_code=401, detail="Invalid or missing phone channel token")
+
+    @app.post("/api/v1/phone-turn", response_model=PhoneTurnResponse)
+    async def phone_turn(
+        payload: PhoneTurnRequest,
+        x_kadal_token: Optional[str] = Header(default=None, alias=PHONE_TOKEN_HEADER),
+        authorization: Optional[str] = Header(default=None),
+    ) -> PhoneTurnResponse:
+        """
+        Phone channel. Gnani Agent Builder handles the call (dialling, STT, TTS) and forwards
+        each caller turn here; the same deterministic firewall books, holds or asks to repeat,
+        and the agent speaks ``reply_text``. No Timbre synthesis runs here: the agent speaks.
+        """
+        _require_phone_token(x_kadal_token, authorization)
+        turn = await run_voice_turn(
+            firewall, speech_client, payload.transcript, path=TIMING_PATH_PHONE_AGENT, synthesize=False
+        )
+        statuses = [d.status.value for d in turn.evaluation.decisions]
+        booked = {LedgerEventStatus.BOOKED.value, LedgerEventStatus.BOOKED_AFTER_BARGE_IN.value}
+        logger.info(
+            "phone turn conversation=%s statuses=%s", payload.conversation_id or "-", ",".join(statuses) or "none"
+        )
+        return PhoneTurnResponse(
+            reply_text=phone_reply_text(turn),
+            booked_count=sum(s in booked for s in statuses),
+            held_count=sum(s not in booked for s in statuses),
+            statuses=statuses,
+            conversation_id=payload.conversation_id,
+        )
 
     @app.post("/api/v1/upload-wav")
     async def upload_and_stream_wav(file: UploadFile = File(...)) -> Dict[str, Any]:
@@ -349,7 +423,7 @@ def create_app(settings: Optional[AppSettings] = None) -> FastAPI:
             logger.exception("Live audio WebSocket error: %s", exc)
             try:
                 await client_ws.send_json({"type": "error", "message": str(exc)})
-            except Exception as send_exc:
+            except Exception as send_exc:  # noqa: BLE001 - best-effort report on a dying socket
                 logger.debug("Could not report the error to the client: %s", send_exc)
         finally:
             if capture is not None:

@@ -115,6 +115,8 @@ TIMING_PATH_LIVE_WS: str = "live_ws"
 TIMING_PATH_UPLOAD_WAV: str = "upload_wav"
 TIMING_PATH_INGEST: str = "ingest"
 TIMING_PATH_PIPECAT: str = "pipecat"
+TIMING_PATH_PHONE_AGENT: str = "phone_agent"  # Gnani Agent Builder On-Call action (/api/v1/phone-turn)
+PHONE_TOKEN_HEADER: str = "X-Kadal-Token"
 TIMING_LOG_DECIMALS: int = 3  # milliseconds to the microsecond
 TIMING_WALL_CLOCK_FORMAT: str = "%H:%M:%S"  # same as the ledger's created_at, to line the two up
 REPLY_AUDIO: str = "audio"
@@ -164,6 +166,10 @@ class AppSettings(BaseSettings):
     # Dev only: when set, each live mic session's raw audio is saved here (see infrastructure/mic_capture.py).
     mic_capture_dir: str = Field(default="")
     catalog_path: str = Field(default=str(PACKAGE_ROOT / "data" / "catalog.json"))
+
+    # Phone channel: shared secret the Gnani Agent Builder On-Call action sends to /api/v1/phone-turn
+    # (header X-Kadal-Token, or Authorization: Bearer <token>). Empty keeps the endpoint disabled.
+    phone_webhook_token: str = Field(default="", repr=False)
 
     # Standard UPI Settlement Configuration
     merchant_upi_vpa: str = Field(default="kadalkural.harbour@okaxis")
