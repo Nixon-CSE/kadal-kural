@@ -93,6 +93,41 @@ def test_normalize_additive_prefix_with_case_ending_multi_09() -> None:
     )
 
 
+# Live Prisma transcript of a real speaker (demo recording, 9 Nov 2026): 800 came back as the
+# colloquial 'எட்நூறு', not 'எண்ணூறு'. It used to leave the rate empty, so the order was asked
+# again instead of reaching the credit check.
+COLLOQUIAL_800_TRANSCRIPT = "செந்திலுக்கு 50 கிலோ எக்ஸ்போர்ட் வஞ்சரம் எட்நூறு ரேட்"
+
+
+def test_normalize_colloquial_eight_hundred() -> None:
+    assert normalize_hybrid_tamil_numerals(COLLOQUIAL_800_TRANSCRIPT) == "செந்திலுக்கு 50 கிலோ எக்ஸ்போர்ட் வஞ்சரம் 800 ரேட்"
+    assert normalize_hybrid_tamil_numerals("எட்நூற்றி 40 ரேட்டு") == "840 ரேட்டு"
+
+
+def test_colloquial_eight_hundred_reaches_the_credit_check(tmp_path: Path) -> None:
+    settings = AppSettings(db_path=str(tmp_path / "colloquial.db"))
+    matcher = BilingualCatalogMatcher(settings.catalog_path)
+    repo = AppendOnlyLedgerRepository(settings.db_path, list(matcher.buyers.values()))
+    service = PreDispatchCreditFirewallService(settings, matcher, repo)
+    (decision,) = service.evaluate_utterance(COLLOQUIAL_800_TRANSCRIPT, stt_latency_ms=200.0)
+    assert decision.status == LedgerEventStatus.CREDIT_HOLD_BREACH
+    assert decision.trade_value_inr == 40_000
+
+
+def test_enough_correction_books_the_held_trade_smaller(tmp_path: Path) -> None:
+    # Live Prisma transcript of the same speaker correcting the held order: 'போதும்' ('that's
+    # enough') instead of 'போடு'. It used to cost confidence and ask again.
+    settings = AppSettings(db_path=str(tmp_path / "enough.db"))
+    matcher = BilingualCatalogMatcher(settings.catalog_path)
+    repo = AppendOnlyLedgerRepository(settings.db_path, list(matcher.buyers.values()))
+    service = PreDispatchCreditFirewallService(settings, matcher, repo)
+    (held,) = service.evaluate_utterance(COLLOQUIAL_800_TRANSCRIPT, stt_latency_ms=200.0)
+    assert held.status == LedgerEventStatus.CREDIT_HOLD_BREACH
+    (fixed,) = service.evaluate_utterance("செந்திலுக்கு 25 கிலோ மட்டும் போதும்", stt_latency_ms=200.0)
+    assert fixed.status == LedgerEventStatus.BOOKED_AFTER_BARGE_IN
+    assert fixed.trade_value_inr == 20_000
+
+
 # Harbour-condition (10 dB and 5 dB) Prisma transcript for tanglish_02, copied verbatim from
 # benchmark/results.csv. Spoken 'kg' came back as 'கார்', which isn't a unit word, and the
 # matcher used to fall back to 'box' silently instead of the prawn SKU's default 'kg'.

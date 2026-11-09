@@ -26,6 +26,8 @@ TAMIL_ADDITIVE_PREFIXES: Final[Dict[str, int]] = {
     "எழுநூற்று": 700,
     "எண்ணூற்றி": 800,
     "எண்ணூற்று": 800,
+    "எட்நூற்றி": 800,  # spoken 'ettu-nootri'; Prisma spells it this way for some speakers
+    "எட்நூற்று": 800,
     "தொள்ளாயிரத்தி": 900,
     "தொள்ளாயிரத்து": 900,
     "ஆயிரத்தி": 1000,
@@ -40,6 +42,7 @@ TAMIL_NUMBER_WORDS: Final[Dict[str, int]] = {
     "ஐம்பது": 50, "அம்பத்தி": 50, "அறுபது": 60, "அறுபத்தி": 60, "எழுபது": 70,
     "எண்பது": 80, "தொண்ணூறு": 90, "நூறு": 100, "இருநூறு": 200, "முந்நூறு": 300,
     "நானூறு": 400, "ஐநூறு": 500, "அறுநூறு": 600, "எழுநூறு": 700, "எண்ணூறு": 800,
+    "எட்நூறு": 800, "எட்டுநூறு": 800,  # colloquial 800, as Prisma transcribed a live speaker
     "தொள்ளாயிரம்": 900, "ஆயிரம்": 1000, "ஐயாயிரம்": 5000,
     "ஒரு": 1, "லட்சம்": 100_000,
     "irubathi": 20, "muppathi": 30, "naarpadhu": 40, "aimbadhu": 50,
@@ -80,6 +83,7 @@ _RATE_WORD_MARK: Final[str] = "\x00RATE\x00"
 TRAILING_LEDGER_VERBS: Final[FrozenSet[str]] = frozenset({
     "கிரெடிட்டில்", "கிரெடிட்", "credit", "கணக்கில்", "லெட்ஜர்",
     "ஏற்று", "போடு", "யேத்து", "yethu", "podu", "rendume", "ரெண்டுமே",
+    "போதும்", "pothum",  # '25 கிலோ மட்டும் போதும்': 'only 25 kg is enough', a live correction
 })
 
 BARGE_IN_OVERRIDE_MARKERS: Final[FrozenSet[str]] = frozenset({
